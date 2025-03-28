@@ -2,6 +2,9 @@ import logging
 import urllib.parse
 import time
 
+# Import from config
+from src.config.config import TIME_FILTER_MAPPING, WORK_TYPE_MAPPING
+
 class JobSearchManager:
     """
     Manages job search, filtering, and finding job listings
@@ -70,18 +73,11 @@ class JobSearchManager:
             params.append("f_AL=true")
             self.logger.debug("Added Easy Apply filter")
 
-            # Add time filter based on setting
-            time_filter_params = {
-                "day": "r86400",    # Past 24 hours (86400 seconds)
-                "week": "r604800",  # Past week (7 days = 604800 seconds)
-                "month": "r2592000", # Past month (30 days = 2592000 seconds)
-                "any": ""           # Any time (no parameter)
-            }
-
+            # Add time filter based on setting - using TIME_FILTER_MAPPING from config
             if isinstance(self.time_filter, str) and self.time_filter.startswith('r') and self.time_filter[1:].isdigit():
                 time_param = self.time_filter  # Already in correct format
             else:
-                time_param = time_filter_params.get(self.time_filter, "r86400")
+                time_param = TIME_FILTER_MAPPING.get(self.time_filter, "r86400")
                 
             if time_param:
                 params.append(f"f_TPR={time_param}")
@@ -176,18 +172,11 @@ class JobSearchManager:
                 params.append("f_AL=true")
                 self.logger.debug("Added Easy Apply filter")
 
-                # Add time filter
-                time_filter_params = {
-                    "day": "r86400",    # Past 24 hours
-                    "week": "r604800",  # Past week 
-                    "month": "r2592000", # Past month
-                    "any": ""           # Any time
-                }
-
+                # Add time filter - using TIME_FILTER_MAPPING from config
                 if isinstance(self.time_filter, str) and self.time_filter.startswith('r') and self.time_filter[1:].isdigit():
                     time_param = self.time_filter  # Already in correct format
                 else:
-                    time_param = time_filter_params.get(self.time_filter, "r86400")
+                    time_param = TIME_FILTER_MAPPING.get(self.time_filter, "r86400")
 
                 if time_param:
                     params.append(f"f_TPR={time_param}")
@@ -201,17 +190,10 @@ class JobSearchManager:
                         self.logger.debug("Added remote work filter")
                     # If remote_only is False and no work_types specified, don't add any filter (show all)
                 else:
-                    # Map string work types to LinkedIn's numeric codes
-                    work_type_map = {
-                        'remote': 2,
-                        'onsite': 1,
-                        'on-site': 1,
-                        'hybrid': 3
-                    }
-
+                    # Map string work types to LinkedIn's numeric codes - using WORK_TYPE_MAPPING from config
                     # Convert string work types to codes and filter out invalid ones
-                    type_codes = [str(work_type_map[wt.lower()]) for wt in work_types 
-                                 if wt.lower() in work_type_map]
+                    type_codes = [WORK_TYPE_MAPPING.get(wt.lower(), "") for wt in work_types 
+                                if wt.lower() in WORK_TYPE_MAPPING]
 
                     if type_codes:
                         # Join multiple work types with commas for URL

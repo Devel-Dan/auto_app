@@ -8,15 +8,17 @@ from google.genai import types
 import os
 import time
 import pathlib
+# Import from config
+from src.config.config import DEFAULT_RESUME_PATH, RESUME_DIR, GEMINI_API_KEY
 
-resume_path = os.getenv('DEFAULT_RESUME_PATH')
+resume_path = DEFAULT_RESUME_PATH
 pdf_file = pathlib.Path(resume_path)
 
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 class CustomResumeHandler():
-    def __init__(self,  base_resume_file_path=pdf_file, resume_dir='custom_resumes', ):
+    def __init__(self,  base_resume_file_path=pdf_file, resume_dir=RESUME_DIR, ):
         self.resume_dir = resume_dir
         self.current_job_description = None
         self.current_job_id = None  # Add this to track the current job

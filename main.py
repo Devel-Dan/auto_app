@@ -18,12 +18,21 @@ from datetime import datetime
 from src.core.application_app import ApplicationApp
 from src.core.logger import setup_logger, setup_root_logger
 
+# Import from config
+from src.config.config import (
+    SEARCH_QUERIES, TIME_FILTER_MAPPING, WORK_TYPE_MAPPING, 
+    LOG_LEVEL, APPLICATION_MAPPING
+)
+
 # Create session timestamp
 session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+# Get log level from config
+log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+
 # Setup root logger first to capture any uncaught logs
 root_logger = setup_root_logger(
-    log_level=logging.DEBUG, 
+    log_level=log_level,
     log_file="logs/all_logs.log",
     add_timestamp=True
 )
@@ -31,7 +40,7 @@ root_logger = setup_root_logger(
 # Setup main logger
 logger = setup_logger(
     "main", 
-    log_level=logging.DEBUG, 
+    log_level=log_level,
     log_file="logs/main.log",
     add_timestamp=True
 )
@@ -41,43 +50,6 @@ logger.info(f"==================================================")
 logger.info(f"=== New Application Session: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
 logger.info(f"==================================================")
 
-# Predefined search queries
-SEARCH_QUERIES = {
-    "default": {
-        "titles_include": [
-            "software engineer", 
-            "test engineer", 
-            "python developer", 
-            "qa engineer",
-            "devops engineer",
-            "data engineer",
-            "automation",
-            "iot engineer",
-            "backend engineer",
-            "fullstack engineer",
-            "cloud engineer",
-            "systems engineer"
-        ],
-        "titles_exclude": [
-            "manager",
-            "principal",
-            "staff",
-            "director",
-            "president",
-            "founding",
-            "lead"
-        ],
-        "skills_required": [
-            "Python", "AWS", "HITL", "pytest", "Flask", "Docker",
-            "HIL testing", "Hardware-in-the-Loop", "embedded systems", "real-time systems"
-        ],
-        "functions_required": [
-            "automat", "pipeline", "testing", "data processing", 
-            "system validation", "controller design"
-        ]
-    }
-}
-
 
 def validate_time_filter(value):
     """
@@ -85,8 +57,8 @@ def validate_time_filter(value):
     - String values ('day', 'week', 'month', 'any') are returned as is
     - Numeric values are interpreted as minutes and returned with 'r' prefix
     """
-    # Predefined string values
-    if value in ['day', 'week', 'month', 'any']:
+    # Use keys from TIME_FILTER_MAPPING instead of hardcoding values
+    if value in TIME_FILTER_MAPPING.keys():
         return value
         
     # Try to convert to integer for custom durations (in minutes)
@@ -98,7 +70,7 @@ def validate_time_filter(value):
         return f"r{minutes}"
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"Time filter must be one of ('day', 'week', 'month', 'any') or a positive number of minutes"
+            f"Time filter must be one of {tuple(TIME_FILTER_MAPPING.keys())} or a positive number of minutes"
         )
     
 
@@ -151,11 +123,11 @@ def main():
     work_type_group.add_argument('--onsite-only', action='store_true', help='Filter for on-site jobs only')
     work_type_group.add_argument('--hybrid-only', action='store_true', help='Filter for hybrid jobs only')
     work_type_group.add_argument('--all-work-types', action='store_true', help='Include all work types (remote, onsite, and hybrid)')
-    work_type_group.add_argument('--work-types', type=str, nargs='+', choices=['remote', 'onsite', 'hybrid'], 
+    work_type_group.add_argument('--work-types', type=str, nargs='+', choices=list(WORK_TYPE_MAPPING.keys()), 
                                help='Specify one or more work types')
     
     parser.add_argument('--time-filter', type=validate_time_filter, default='day',
-                        help='Time filter for jobs: "day" (24h), "week", "month", "any", or a custom number of seconds (e.g. 3600 for last hour)')
+                        help=f'Time filter for jobs: {", ".join(["\"" + k + "\"" for k in TIME_FILTER_MAPPING.keys()])} or a custom number of minutes (e.g. 3600 for last hour)')
     parser.add_argument('--query-file', type=str, help='Path to JSON file with custom search query')
     parser.add_argument('--predefined-query', type=str, choices=list(SEARCH_QUERIES.keys()), 
                         help='Use a predefined complex query')
@@ -177,24 +149,34 @@ def main():
         work_types = ['hybrid']
         logger.info("Filtering for hybrid jobs only")
     elif args.all_work_types:
-        work_types = ['remote', 'onsite', 'hybrid']
-        logger.info("Including all work types: remote, on-site, and hybrid")
+        work_types = list(WORK_TYPE_MAPPING.keys())
+        logger.info(f"Including all work types: {', '.join(work_types)}")
     elif args.work_types:
         work_types = args.work_types
         logger.info(f"Using specified work types: {work_types}")
     else:
         # Default to all work types if nothing else specified
-        work_types = ['remote', 'onsite', 'hybrid']
-        logger.info("Using default: all job types")
+        work_types = list(WORK_TYPE_MAPPING.keys())
+        logger.info(f"Using default: all job types")
 
     try:
         # Check for required environment variables
-        logger.debug("Checking required environment variables")
-        required_env_vars = ['USERNAME', 'PASSWORD', 'BROWSER_DATA']
-        missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+        # Use keys from the LinkedIn configuration instead of hardcoding
+        linkedin_config = APPLICATION_MAPPING.get("linkedin", {})
+        required_env_vars = []
         
-        if missing_vars:
-            logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+        # Dynamically determine required env vars from config
+        if linkedin_config.get("username") is None:
+            required_env_vars.append('USERNAME')
+        if linkedin_config.get("password") is None:
+            required_env_vars.append('PASSWORD')
+        
+        # Always require browser data
+        if not os.getenv('BROWSER_DATA'):
+            required_env_vars.append('BROWSER_DATA')
+        
+        if required_env_vars:
+            logger.error(f"Missing required environment variables: {', '.join(required_env_vars)}")
             return 1
         
         # Process query if provided

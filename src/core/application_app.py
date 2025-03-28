@@ -8,6 +8,8 @@ from src.managers.application_manager import ApplicationManager
 from src.managers.form_manager import FormResponseManager
 from src.handlers.custom_resume import CustomResumeHandler
 from src.core.logger import setup_logger
+# Import config
+from src.config.config import APPLICATION_MAPPING, SELECTORS, JOB_FILTERS
 
 class ApplicationApp:
     """
@@ -45,82 +47,19 @@ class ApplicationApp:
 
     def load_config(self):
         """Load application configuration"""
-        # Job filters - positions to avoid
-        self.job_filters = [
-            "machine learning",
-            "manager",
-            "principal",
-            "staff",
-            "embedded",
-            "bioinformatics",
-            "electrical",
-            "mechanical",
-            "data scientist",
-            "founding",
-            "c++",
-            "AI engineer"
-        ]
+        # Job filters from config
+        self.job_filters = JOB_FILTERS
         
-        # Application-specific configurations
-        self.application_mapping = {
-            "linkedin": {
-                "url": 'https://www.linkedin.com',
-                "login": "/login/",
-                "jobs": "/jobs/",
-                "username": os.getenv('USERNAME'),
-                "password": os.getenv("PASSWORD"),
-                "authenticator": True,
-                "logged_in_selector": "div[data-control-name='nav.homepage']",
-                "search_keyword_selector": "input[aria-label='Search by title, skill, or company']",
-                "search_location_selector": "input[aria-label='City, state, or zip code']",
-                "time_filter_button": "button[aria-label='Date posted filter. Clicking this button displays all Date posted filter options.']",
-                "time_filter_enter": '.reusable-search-filters-buttons > .artdeco-button--primary',
-                "easy_apply_button": "button[aria-label='Easy Apply filter.']",
-                "close": "button[aria-label='Dismiss']"
-            }
-        }
+        # Application-specific configurations from config
+        self.application_mapping = APPLICATION_MAPPING
         
-        # Common selectors
-        self.selectors = {
-            "MODAL": "div.artdeco-modal.jobs-easy-apply-modal",
-            "CLOSE_BUTTON": [
-                "button[aria-label='Dismiss']",
-                ".artdeco-modal__dismiss",
-                "button.artdeco-button--circle.artdeco-modal__dismiss",
-                "button.artdeco-button--tertiary[aria-label='Dismiss']",
-                "#ember1266",
-                ".artdeco-modal button[aria-label='Dismiss']"
-            ],
-            "JOB_CARDS": "li.ember-view.occludable-update.scaffold-layout__list-item",
-            # More specific selectors for the job details page
-            "JOB_DETAILS_TITLE": ".job-details-jobs-unified-top-card__job-title h1 a",
-            "JOB_DETAILS_TITLE_ALT": ".job-details-jobs-unified-top-card__job-title h1",
-            "JOB_DETAILS_COMPANY": ".job-details-jobs-unified-top-card__company-name a",
-            "JOB_DETAILS_COMPANY_ALT": ".job-details-jobs-unified-top-card__company-name",
-            "JOB_DESCRIPTION": "div.jobs-description-content__text--stretch",
-            "EASY_APPLY_BUTTON": ".jobs-apply-button",
-            "RESUME_SECTION": ".jobs-document-upload-redesign-card__container",
-            "RESUME_UPLOAD_BUTTON": "label.jobs-document-upload__upload-button",
-            "ERROR_INDICATORS": [
-                ".artdeco-inline-feedback--error",
-                ".fb-dash-form-element-error",
-                ".invalid-input",
-                "[role='alert']"
-            ],
-            "PAGINATION": ".jobs-search-results-list__pagination",
-            "ACTIVE_PAGE": ".artdeco-pagination__indicator--number.active",
-            "NAVIGATION": {
-                "SUBMIT": "button.artdeco-button--primary:has-text('Submit application')",
-                "REVIEW": "button.artdeco-button--primary:has-text('Review')",
-                "NEXT": "button.artdeco-button--primary:has-text('Next')",
-                "NOT_NOW": "button:has-text('Not now')"
-            }
-        }
+        # Common selectors from config
+        self.selectors = SELECTORS
         
         # Get app-specific config
         self.app_config = self.application_mapping[self.application_type]
         
-        # Browser user data directory
+        # Browser user data dir
         self.user_data_dir = os.getenv("BROWSER_DATA")
 
     def __enter__(self):

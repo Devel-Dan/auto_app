@@ -3,11 +3,14 @@ import time
 import logging
 import os
 
+# Import from config
+from src.config.config import USER_DATA_DIR, HEADLESS_DEFAULT
+
 class BrowserManager:
     """
     Manages browser interactions, setup, and UI operations
     """
-    def __init__(self, user_data_dir, headless=False, logger=None):
+    def __init__(self, user_data_dir=USER_DATA_DIR, headless=HEADLESS_DEFAULT, logger=None):
         self.user_data_dir = user_data_dir
         self.headless = headless
         self.logger = logger or logging.getLogger(__name__)

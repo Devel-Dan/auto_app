@@ -7,13 +7,15 @@ from google import genai
 from google.genai import types
 import pathlib
 
+# Import from config
+from src.config.config import FORM_RESPONSES_PATH, DEFAULT_RESUME_PATH, GEMINI_API_KEY
+
 # Setup logger
 logger = logging.getLogger(__name__)
 
-resume_path = os.getenv('DEFAULT_RESUME_PATH')
+# Use values from config
+resume_path = DEFAULT_RESUME_PATH
 pdf_file = pathlib.Path(resume_path)
-
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 class FormResponseManager:
     def __init__(self, json_path=None, headless=False):
@@ -35,6 +37,12 @@ class FormResponseManager:
                 'form_responses.json',
                 os.path.join(os.path.dirname(__file__), '..', 'data', 'form_responses.json')
             ]
+            
+            # Get default path from config
+            default_path = FORM_RESPONSES_PATH
+            if default_path:
+                logger.info(f"Using config FORM_RESPONSES_PATH: {default_path}")
+                potential_paths.insert(0, default_path)
             
             # Check environment variable
             env_path = os.getenv('FORM_RESPONSES_PATH')

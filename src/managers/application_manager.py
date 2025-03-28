@@ -1,6 +1,8 @@
 import time
 import logging
 import os
+import uuid
+from datetime import datetime
 
 class ApplicationManager:
     """
@@ -15,6 +17,20 @@ class ApplicationManager:
         self.selectors = selectors
         self.job_filters = job_filters
         self.logger = logger or logging.getLogger(__name__)
+        
+        # Generate a unique session ID for this application run
+        self.session_id = str(uuid.uuid4())[:8]
+        
+        # Statistics counters
+        self.stats = {
+            "processed": 0,
+            "skipped": 0, 
+            "already_applied": 0
+        }
+        
+        self.start_time = datetime.now()
+        self.logger.info(f"[SESSION:{self.session_id}] ApplicationManager initialized at {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(f"[SESSION:{self.session_id}] Using {len(self.job_filters)} job filters: {', '.join(self.job_filters[:5])}{'...' if len(self.job_filters) > 5 else ''}")
 
     def close_dialog(self):
         """Close any open dialog, handling both application form and confirmation dialogs"""
@@ -473,267 +489,505 @@ class ApplicationManager:
             self.logger.error(f"Error checking if job already applied: {e}")
             # In case of error, assume not applied to avoid skipping potentially new jobs
             return False
+
+    def process_job_card(self, card, ember_id, ember_num, sorted_cards):
+        """Process an individual job card"""
+        card_start_time = datetime.now()
+        job_trace_id = str(uuid.uuid4())[:6]  # Generate unique trace ID for this job
+        self.logger.info(f"[JOB:{job_trace_id}] Starting to process job card #{ember_id} at position {ember_num}")
         
+        try:
+            # Verify card is still connected to DOM
+            try:
+                is_connected = card.evaluate('node => !!node.isConnected')
+                if not is_connected:
+                    self.logger.info(f"[JOB:{job_trace_id}] Card #{ember_id} is no longer connected to DOM, skipping")
+                    self.job_search_manager.processed_ids.add(ember_id)
+                    return False
+            except Exception as e:
+                self.logger.error(f"[JOB:{job_trace_id}] Error checking if card is connected: {e}")
+                self.job_search_manager.processed_ids.add(ember_id)
+                return False
+
+            # Scroll to job card
+            self.logger.debug(f"[JOB:{job_trace_id}] Scrolling to job card #{ember_id}")
+            self.job_search_manager.scroll_to_job_card(card, ember_id, ember_num, sorted_cards)
+            time.sleep(0.5)  # Wait for scroll to complete
+
+            # Get fresh reference by ember ID - with more verification
+            try:
+                self.logger.debug(f"[JOB:{job_trace_id}] Getting fresh reference to card #{ember_id}")
+                fresh_card = self.page.query_selector(f"#{ember_id}")
+                if not fresh_card:
+                    self.logger.info(f"[JOB:{job_trace_id}] Card #{ember_id} no longer in DOM after scroll, skipping")
+                    self.job_search_manager.processed_ids.add(ember_id)
+                    return False
+
+                # Make sure it's visible
+                is_visible = fresh_card.is_visible()
+                self.logger.debug(f"[JOB:{job_trace_id}] Card visibility check: {is_visible}")
+                if not is_visible:
+                    self.logger.info(f"[JOB:{job_trace_id}] Card #{ember_id} is not visible, skipping")
+                    self.job_search_manager.processed_ids.add(ember_id)
+                    return False
+            except Exception as e:
+                self.logger.error(f"[JOB:{job_trace_id}] Error getting fresh card reference: {e}")
+                self.job_search_manager.processed_ids.add(ember_id)
+                return False
+            
+            # Click on the job card to view details
+            self.logger.debug(f"[JOB:{job_trace_id}] Attempting to click job card #{ember_id}")
+            if not self._click_job_card(fresh_card, ember_id, job_trace_id):
+                self.logger.info(f"[JOB:{job_trace_id}] Failed to click job card #{ember_id}, skipping")
+                self.job_search_manager.processed_ids.add(ember_id)
+                return False
+
+            # Wait for job details page to load
+            self.logger.debug(f"[JOB:{job_trace_id}] Waiting for job details to load")
+            if not self._wait_for_job_details(job_trace_id):
+                self.logger.info(f"[JOB:{job_trace_id}] Job details did not load properly, skipping")
+                self.job_search_manager.processed_ids.add(ember_id)
+                return False
+
+            # Check if job has already been applied to
+            self.logger.debug(f"[JOB:{job_trace_id}] Checking if already applied")
+            if self.is_already_applied():
+                self.logger.info(f"[JOB:{job_trace_id}] Job #{ember_id} has already been applied to - SKIPPING")
+                self.job_search_manager.processed_ids.add(ember_id)
+                self.stats["already_applied"] += 1
+                return False
+
+            time.sleep(2)  # Give extra time for content to settle
+
+            # Extract information from the job details page
+            self.logger.debug(f"[JOB:{job_trace_id}] Extracting job details")
+            job_title, company_name = self.job_search_manager.extract_job_details()
+
+            # Filter out jobs based on title
+            if any([x in job_title.lower() for x in self.job_filters]):
+                matched_filters = [x for x in self.job_filters if x in job_title.lower()]
+                self.logger.info(f"[JOB:{job_trace_id}] Filtered out job: {job_title} (matched filters: {', '.join(matched_filters)})")
+                self.job_search_manager.processed_ids.add(ember_id)
+                return False
+
+            self.logger.info(f"[JOB:{job_trace_id}] JOB TITLE: {job_title}")
+            self.logger.info(f"[JOB:{job_trace_id}] COMPANY NAME: {company_name}")
+
+            # Get job description - but don't generate resume yet
+            self.logger.debug(f"[JOB:{job_trace_id}] Getting job description")
+            job_description = self.job_search_manager.get_job_description()
+            if job_description:
+                desc_length = len(job_description)
+                self.logger.debug(f"[JOB:{job_trace_id}] Job description retrieved: {desc_length} chars")
+                self.form_handler.response_manager.current_job_description = job_description
+                self.resume_handler.current_job_description = job_description
+            else:
+                self.logger.warning(f"[JOB:{job_trace_id}] No job description found!")
+
+            # Check if this is an Easy Apply job and click the button if it is
+            self.logger.debug(f"[JOB:{job_trace_id}] Attempting to click Easy Apply button")
+            if self.click_easy_apply():
+                self.logger.info(f"[JOB:{job_trace_id}] Successfully clicked Easy Apply button")
+                
+                # Only generate resume after clicking Easy Apply button
+                if job_description and job_title and company_name:
+                    self.logger.info(f"[JOB:{job_trace_id}] Generating custom resume for {job_title} at {company_name}")
+                    resume_generation_start = datetime.now()
+                    resume_id = self.resume_handler.generate_custom_resume(
+                        job_title, company_name, job_description
+                    )
+                    resume_generation_time = (datetime.now() - resume_generation_start).total_seconds()
+                    self.logger.info(f"[JOB:{job_trace_id}] Generated custom resume ID: {resume_id} in {resume_generation_time:.2f} seconds")
+                else:
+                    self.logger.warning(f"[JOB:{job_trace_id}] Missing info for resume generation: title={bool(job_title)}, company={bool(company_name)}, description={bool(job_description)}")
+
+                # Handle application process with retry
+                self.logger.debug(f"[JOB:{job_trace_id}] Starting application process with retry")
+                application_start = datetime.now()
+                success = self._apply_with_retry(job_title, job_trace_id)
+                application_time = (datetime.now() - application_start).total_seconds()
+
+                if success:
+                    self.stats["processed"] += 1
+                    self.logger.info(f"[JOB:{job_trace_id}] Successfully applied to job: {job_title} in {application_time:.2f} seconds")
+                else:
+                    self.logger.warning(f"[JOB:{job_trace_id}] Failed to apply to job: {job_title} after retries")
+            else:
+                self.logger.info(f"[JOB:{job_trace_id}] Skipping job '{job_title}' - not an Easy Apply job")
+                self.stats["skipped"] += 1
+
+            # Clean up after application
+            self.logger.debug(f"[JOB:{job_trace_id}] Cleaning up after application")
+            self.close_dialog()
+            
+            # Reset job-specific data
+            self.form_handler.response_manager.current_job_description = None
+            self.resume_handler.current_job_description = None
+            self.resume_handler.current_job_id = None
+
+            # Mark as processed regardless of success
+            self.job_search_manager.processed_ids.add(ember_id)
+            
+            # Calculate and log total processing time
+            processing_time = (datetime.now() - card_start_time).total_seconds()
+            self.logger.info(f"[JOB:{job_trace_id}] Completed processing job #{ember_id} in {processing_time:.2f} seconds")
+            
+            return True
+
+        except Exception as e:
+            self.logger.error(f"[JOB:{job_trace_id}] Error processing job {ember_id}: {str(e)}", exc_info=True)
+            
+            # Calculate and log failure time
+            failure_time = (datetime.now() - card_start_time).total_seconds()
+            self.logger.error(f"[JOB:{job_trace_id}] Failed processing job #{ember_id} after {failure_time:.2f} seconds")
+            
+            try:
+                self.close_dialog()
+            except Exception as dialog_error:
+                self.logger.error(f"[JOB:{job_trace_id}] Error closing dialog after failure: {str(dialog_error)}")
+                
+            self.job_search_manager.processed_ids.add(ember_id)
+            return False
+
+    def _click_job_card(self, card, ember_id, job_trace_id):
+        """Try to click on a job card with multiple fallbacks"""
+        self.logger.info(f"[JOB:{job_trace_id}] Attempting to click job card #{ember_id}")
+        click_successful = False
+        click_start_time = datetime.now()
+
+        try:
+            # Method 1: Try to find and click on any link in the card
+            self.logger.debug(f"[JOB:{job_trace_id}] Method 1: Trying to click link in card")
+            link = card.query_selector("a")
+            if link:
+                link_visible = link.is_visible()
+                self.logger.debug(f"[JOB:{job_trace_id}] Found link in card, visible: {link_visible}")
+                if link_visible:
+                    link.click()
+                    click_successful = True
+                    self.logger.info(f"[JOB:{job_trace_id}] Method 1 successful: Clicked link in card #{ember_id}")
+                    return True
+                else:
+                    self.logger.debug(f"[JOB:{job_trace_id}] Link found but not visible")
+            else:
+                self.logger.debug(f"[JOB:{job_trace_id}] No link found in card")
+        except Exception as e:
+            self.logger.error(f"[JOB:{job_trace_id}] Method 1 failed: Link click failed: {str(e)}")
+
+        try:
+            # Method 2: Click the card itself
+            if not click_successful:
+                self.logger.debug(f"[JOB:{job_trace_id}] Method 2: Trying to click card directly")
+                card.click()
+                click_successful = True
+                self.logger.info(f"[JOB:{job_trace_id}] Method 2 successful: Clicked card #{ember_id} directly")
+                return True
+        except Exception as e:
+            self.logger.error(f"[JOB:{job_trace_id}] Method 2 failed: Direct card click failed: {str(e)}")
+
+        # Method 3: JavaScript fallback
+        if not click_successful:
+            try:
+                self.logger.debug(f"[JOB:{job_trace_id}] Method 3: Trying JavaScript fallback click")
+                clicked = self.page.evaluate(f"""
+                    (() => {{
+                        const card = document.getElementById('{ember_id}');
+                        if (card) {{
+                            const link = card.querySelector('a');
+                            if (link) {{
+                                link.click();
+                                return true;
+                            }}
+                            card.click();
+                            return true;
+                        }}
+                        return false;
+                    }})()
+                """)
+
+                if clicked:
+                    self.logger.info(f"[JOB:{job_trace_id}] Method 3 successful: JavaScript click worked for card #{ember_id}")
+                    click_successful = True
+                    return True
+                else:
+                    self.logger.warning(f"[JOB:{job_trace_id}] Method 3 failed: JavaScript click returned false for card #{ember_id}")
+            except Exception as e:
+                self.logger.error(f"[JOB:{job_trace_id}] Method 3 failed: JavaScript click error: {str(e)}")
+
+        # Log the total time spent trying to click
+        click_duration = (datetime.now() - click_start_time).total_seconds()
+        if click_successful:
+            self.logger.info(f"[JOB:{job_trace_id}] Successfully clicked card #{ember_id} in {click_duration:.2f} seconds")
+        else:
+            self.logger.error(f"[JOB:{job_trace_id}] Failed to click card #{ember_id} after {click_duration:.2f} seconds and 3 attempts")
+            
+        return click_successful
+
+    def _wait_for_job_details(self, job_trace_id):
+        """Wait for job details page to load"""
+        self.logger.info(f"[JOB:{job_trace_id}] Waiting for job details page to load...")
+        start_wait_time = datetime.now()
+        try:
+            # Try each selector individually with timeout
+            found_selector = False
+            
+            # First try the primary selector
+            primary_selector = self.selectors["JOB_DETAILS_TITLE"]
+            self.logger.debug(f"[JOB:{job_trace_id}] Trying primary selector: {primary_selector}")
+            try:
+                self.page.wait_for_selector(primary_selector, timeout=10000)
+                wait_time = (datetime.now() - start_wait_time).total_seconds()
+                self.logger.info(f"[JOB:{job_trace_id}] Job details page loaded (primary selector found) in {wait_time:.2f} seconds")
+                found_selector = True
+            except Exception as primary_error:
+                self.logger.info(f"[JOB:{job_trace_id}] Primary job title selector not found after {(datetime.now() - start_wait_time).total_seconds():.2f} seconds: {str(primary_error)}")
+
+            # If primary not found, try the fallback selector
+            if not found_selector:
+                fallback_selector = self.selectors["JOB_DETAILS_TITLE_ALT"]
+                self.logger.debug(f"[JOB:{job_trace_id}] Trying fallback selector: {fallback_selector}")
+                try:
+                    self.page.wait_for_selector(fallback_selector, timeout=5000)
+                    wait_time = (datetime.now() - start_wait_time).total_seconds()
+                    self.logger.info(f"[JOB:{job_trace_id}] Job details page loaded (fallback selector found) in {wait_time:.2f} seconds")
+                    found_selector = True
+                except Exception as fallback_error:
+                    self.logger.info(f"[JOB:{job_trace_id}] Fallback job title selector also not found: {str(fallback_error)}")
+
+            # If neither selector was found, raise an exception
+            if not found_selector:
+                total_wait_time = (datetime.now() - start_wait_time).total_seconds()
+                self.logger.error(f"[JOB:{job_trace_id}] Could not find any job details selectors after {total_wait_time:.2f} seconds")
+                raise Exception("Could not find any job details selectors")
+
+            # Do an additional check for "Page not found" indicators
+            try:
+                not_found_indicator = self.page.query_selector("div.artdeco-empty-state__message:has-text('Page not found')")
+                if not_found_indicator and not_found_indicator.is_visible():
+                    self.logger.error(f"[JOB:{job_trace_id}] 'Page not found' message detected on job details page")
+                    return False
+            except Exception:
+                pass  # Ignore errors in this additional check
+                
+            # Do a check for server error indicators
+            try:
+                server_error = self.page.query_selector("div.artdeco-empty-state__message:has-text('server error')")
+                if server_error and server_error.is_visible():
+                    self.logger.error(f"[JOB:{job_trace_id}] Server error detected on job details page")
+                    return False
+            except Exception:
+                pass  # Ignore errors in this additional check
+
+            return True
+
+        except Exception as e:
+            total_wait_time = (datetime.now() - start_wait_time).total_seconds()
+            self.logger.error(f"[JOB:{job_trace_id}] Error waiting for job details after {total_wait_time:.2f} seconds: {str(e)}")
+            return False
+
+    def process_job_cards_batch(self, sorted_cards):
+        """Process a batch of job cards"""
+        batch_trace_id = str(uuid.uuid4())[:6]  # Generate unique trace ID for this batch
+        batch_start_time = datetime.now()
+        self.logger.info(f"[BATCH:{batch_trace_id}] Starting to process batch of {len(sorted_cards)} job cards")
+        
+        # Track if we processed any new cards in this batch
+        new_cards_processed = False
+        cards_processed = 0
+        cards_skipped = 0
+
+        for card, ember_num, ember_id in sorted_cards:
+            # Skip already processed cards
+            if ember_id in self.job_search_manager.processed_ids:
+                cards_skipped += 1
+                continue
+            
+            card_processed = self.process_job_card(card, ember_id, ember_num, sorted_cards)
+            if card_processed:
+                new_cards_processed = True
+                cards_processed += 1
+        
+        batch_duration = (datetime.now() - batch_start_time).total_seconds()
+        self.logger.info(f"[BATCH:{batch_trace_id}] Batch processing completed in {batch_duration:.2f} seconds")
+        self.logger.info(f"[BATCH:{batch_trace_id}] Cards processed: {cards_processed}, cards skipped: {cards_skipped}")
+                
+        return new_cards_processed
+
+    def process_page(self, page_number):
+        """Process all jobs on a single page"""
+        page_trace_id = str(uuid.uuid4())[:6]  # Generate unique trace ID for this page
+        page_start_time = datetime.now()
+        self.logger.info(f"[PAGE:{page_trace_id}] ===== Starting to process page {page_number} =====")
+        
+        page_stats = {"processed": 0, "skipped": 0, "already_applied": 0}
+        
+        # Get starting stats to calculate page stats later
+        start_processed = self.stats["processed"]
+        start_skipped = self.stats["skipped"]
+        start_already_applied = self.stats["already_applied"]
+        
+        batch_count = 0
+        total_cards_found = 0
+
+        while True:
+            batch_count += 1
+            self.logger.info(f"[PAGE:{page_trace_id}] Processing batch {batch_count} on page {page_number}")
+            
+            # Get fresh job cards sorted by ember ID
+            sorted_cards = self.job_search_manager.get_job_cards()
+            total_cards_found = len(sorted_cards)
+
+            if not sorted_cards:
+                self.logger.info(f"[PAGE:{page_trace_id}] No job cards found in batch {batch_count}")
+                break
+            
+            # Add a stability delay
+            self.logger.debug(f"[PAGE:{page_trace_id}] Found {len(sorted_cards)} job cards, stabilizing before processing...")
+            time.sleep(2)  # Give LinkedIn DOM time to stabilize
+
+            # Process the batch of cards
+            self.logger.debug(f"[PAGE:{page_trace_id}] Processing batch {batch_count} with {len(sorted_cards)} cards")
+            new_cards_processed = self.process_job_cards_batch(sorted_cards)
+            self.logger.debug(f"[PAGE:{page_trace_id}] Batch {batch_count} processing result: new_cards_processed={new_cards_processed}")
+
+            # If no new cards were processed, try to load more or exit
+            if not new_cards_processed:
+                self.logger.info(f"[PAGE:{page_trace_id}] No new cards processed in batch {batch_count}, attempting to load more...")
+                if not self.job_search_manager.load_more_cards(sorted_cards):
+                    self.logger.info(f"[PAGE:{page_trace_id}] No more cards could be loaded, exiting page processing")
+                    break
+                self.logger.info(f"[PAGE:{page_trace_id}] Successfully loaded more cards, continuing to next batch")
+
+        # Calculate page stats
+        page_stats["processed"] = self.stats["processed"] - start_processed
+        page_stats["skipped"] = self.stats["skipped"] - start_skipped
+        page_stats["already_applied"] = self.stats["already_applied"] - start_already_applied
+        
+        page_duration = (datetime.now() - page_start_time).total_seconds()
+        
+        self.logger.info(f"[PAGE:{page_trace_id}] ===== Page {page_number} processing summary =====")
+        self.logger.info(f"[PAGE:{page_trace_id}] Processed {page_stats['processed']} jobs on page {page_number}")
+        self.logger.info(f"[PAGE:{page_trace_id}] Skipped {page_stats['skipped']} jobs on page {page_number} (not Easy Apply)")
+        self.logger.info(f"[PAGE:{page_trace_id}] Skipped {page_stats['already_applied']} jobs on page {page_number} (already applied)")
+        self.logger.info(f"[PAGE:{page_trace_id}] Total job cards found: {total_cards_found}")
+        self.logger.info(f"[PAGE:{page_trace_id}] Total batches processed: {batch_count}")
+        self.logger.info(f"[PAGE:{page_trace_id}] Total page processing time: {page_duration:.2f} seconds")
+        self.logger.info(f"[PAGE:{page_trace_id}] Average time per job: {page_duration / max(page_stats['processed'] + page_stats['skipped'] + page_stats['already_applied'], 1):.2f} seconds")
+        
+        return page_stats
+
+    def navigate_pages(self):
+        """Navigate through multiple pages of job listings"""
+        session_trace_id = str(uuid.uuid4())[:6]  # Generate unique trace ID for this session
+        session_start_time = datetime.now()
+        self.logger.info(f"[SESSION:{session_trace_id}] Starting multi-page job application session")
+        
+        current_page = 1
+        total_pages_processed = 0
+        
+        while True:
+            # Process the current page
+            self.logger.info(f"[SESSION:{session_trace_id}] Starting to process page {current_page}")
+            page_start_time = datetime.now()
+            
+            page_stats = self.process_page(current_page)
+            
+            page_duration = (datetime.now() - page_start_time).total_seconds()
+            self.logger.info(f"[SESSION:{session_trace_id}] Completed page {current_page} in {page_duration:.2f} seconds")
+            total_pages_processed += 1
+            
+            # Navigate to next page if available
+            self.logger.info(f"[SESSION:{session_trace_id}] Checking for next page after page {current_page}")
+            if self.job_search_manager.navigate_to_next_page():
+                current_page += 1
+                self.logger.info(f"[SESSION:{session_trace_id}] Successfully navigated to page {current_page}")
+            else:
+                self.logger.info(f"[SESSION:{session_trace_id}] No more pages available or reached the last page")
+                break
+                
+        # Log overall statistics
+        session_duration = (datetime.now() - session_start_time).total_seconds()
+        minutes = int(session_duration // 60)
+        seconds = int(session_duration % 60)
+        
+        self.logger.info(f"[SESSION:{session_trace_id}] ===== Session Summary =====")
+        self.logger.info(f"[SESSION:{session_trace_id}] Session completed in {minutes} minutes, {seconds} seconds")
+        self.logger.info(f"[SESSION:{session_trace_id}] Total pages processed: {total_pages_processed}")
+        self.logger.info(f"[SESSION:{session_trace_id}] Total jobs processed: {self.stats['processed']}")
+        self.logger.info(f"[SESSION:{session_trace_id}] Total jobs skipped (not Easy Apply): {self.stats['skipped']}")
+        self.logger.info(f"[SESSION:{session_trace_id}] Total jobs skipped (already applied): {self.stats['already_applied']}")
+        
+        # Calculate rates
+        if self.stats['processed'] > 0:
+            avg_time_per_application = session_duration / self.stats['processed']
+            self.logger.info(f"[SESSION:{session_trace_id}] Average time per successful application: {avg_time_per_application:.2f} seconds")
+            applications_per_hour = (3600 / avg_time_per_application) if avg_time_per_application > 0 else 0
+            self.logger.info(f"[SESSION:{session_trace_id}] Estimated applications per hour: {applications_per_hour:.2f}")
+        
+        total_jobs_encountered = self.stats['processed'] + self.stats['skipped'] + self.stats['already_applied']
+        if total_jobs_encountered > 0:
+            success_rate = (self.stats['processed'] / total_jobs_encountered) * 100
+            self.logger.info(f"[SESSION:{session_trace_id}] Application success rate: {success_rate:.2f}%")
+        
+        self.logger.info(f"[SESSION:{session_trace_id}] ===== End of Session =====")
+
     def apply(self):
         """Apply to all eligible jobs on the page"""
         try:
-            current_page = 1
-            total_jobs_processed = 0
-            total_jobs_skipped = 0
-            total_already_applied = 0  # Counter for already applied jobs
-
-            while True:
-                self.logger.info(f"\n=== Processing jobs on page {current_page} ===\n")
-                page_jobs_processed = 0
-                page_jobs_skipped = 0
-                page_already_applied = 0  # Counter for already applied jobs on this page
-
-                while True:
-                    # Get fresh job cards sorted by ember ID
-                    sorted_cards = self.job_search_manager.get_job_cards()
-
-                    if not sorted_cards:
-                        self.logger.info("No job cards found")
-                        break
-                    
-                    # Add a stability delay
-                    self.logger.info(f"Found {len(sorted_cards)} job cards, stabilizing before processing...")
-                    time.sleep(2)  # Give LinkedIn DOM time to stabilize
-
-                    # Track if we processed any new cards in this batch
-                    new_cards_processed = False
-
-                    for card, ember_num, ember_id in sorted_cards:
-                        # Skip already processed cards
-                        if ember_id in self.job_search_manager.processed_ids:
-                            continue
-                        
-                        try:
-                            # Verify card is still connected to DOM
-                            try:
-                                is_connected = card.evaluate('node => !!node.isConnected')
-                                if not is_connected:
-                                    self.logger.info(f"Card #{ember_id} is no longer connected to DOM, skipping")
-                                    self.job_search_manager.processed_ids.add(ember_id)
-                                    continue
-                            except Exception as e:
-                                self.logger.error(f"Error checking if card is connected: {e}")
-                                self.job_search_manager.processed_ids.add(ember_id)
-                                continue
-
-                            # Scroll to job card
-                            self.job_search_manager.scroll_to_job_card(card, ember_id, ember_num, sorted_cards)
-                            time.sleep(0.5)  # Wait for scroll to complete
-
-                            # Get fresh reference by ember ID - with more verification
-                            try:
-                                fresh_card = self.page.query_selector(f"#{ember_id}")
-                                if not fresh_card:
-                                    self.logger.info(f"Card #{ember_id} no longer in DOM after scroll, skipping")
-                                    self.job_search_manager.processed_ids.add(ember_id)
-                                    continue
-
-                                # Make sure it's visible
-                                if not fresh_card.is_visible():
-                                    self.logger.info(f"Card #{ember_id} is not visible, skipping")
-                                    self.job_search_manager.processed_ids.add(ember_id)
-                                    continue
-                            except Exception as e:
-                                self.logger.error(f"Error getting fresh card reference: {e}")
-                                self.job_search_manager.processed_ids.add(ember_id)
-                                continue
-                            
-                            # Click on the job card to view details - with enhanced error handling
-                            self.logger.info(f"Clicking job card #{ember_id}")
-                            click_successful = False
-
-                            try:
-                                # Try multiple click methods in sequence
-
-                                # Method 1: Try to find and click on any link in the card
-                                link = fresh_card.query_selector("a")
-                                if link and link.is_visible():
-                                    link.click()
-                                    click_successful = True
-                                    self.logger.info(f"Clicked link in card #{ember_id}")
-
-                                # Method 2: Click the card itself
-                                if not click_successful:
-                                    fresh_card.click()
-                                    click_successful = True
-                                    self.logger.info(f"Clicked card #{ember_id} directly")
-
-                            except Exception as click_error:
-                                self.logger.error(f"Standard click methods failed: {click_error}")
-
-                            # Method 3: JavaScript fallback
-                            if not click_successful:
-                                try:
-                                    self.logger.info(f"Using JavaScript to click card #{ember_id}")
-                                    clicked = self.page.evaluate(f"""
-                                        (() => {{
-                                            const card = document.getElementById('{ember_id}');
-                                            if (card) {{
-                                                const link = card.querySelector('a');
-                                                if (link) {{
-                                                    link.click();
-                                                    return true;
-                                                }}
-                                                card.click();
-                                                return true;
-                                            }}
-                                            return false;
-                                        }})()
-                                    """)
-
-                                    if clicked:
-                                        click_successful = True
-                                        self.logger.info(f"JavaScript click successful for card #{ember_id}")
-                                    else:
-                                        self.logger.info(f"JavaScript click returned false for card #{ember_id}")
-                                except Exception as js_error:
-                                    self.logger.error(f"JavaScript click failed: {js_error}")
-
-                            # If we couldn't click the card at all, skip it
-                            if not click_successful:
-                                self.logger.info(f"Could not click card #{ember_id} with any method, skipping")
-                                self.job_search_manager.processed_ids.add(ember_id)
-                                continue
-
-                            # Wait for job details page to load
-                            self.logger.info("Waiting for job details page to load...")
-                            try:
-                                # Try each selector individually with timeout
-                                found_selector = False
-
-                                # First try the primary selector
-                                try:
-                                    self.page.wait_for_selector(self.selectors["JOB_DETAILS_TITLE"], timeout=10000)
-                                    self.logger.info("Job details page loaded (primary selector found)")
-                                    found_selector = True
-                                except Exception:
-                                    self.logger.info("Primary job title selector not found, trying fallback")
-
-                                # If primary not found, try the fallback selector
-                                if not found_selector:
-                                    try:
-                                        self.page.wait_for_selector(self.selectors["JOB_DETAILS_TITLE_ALT"], timeout=5000)
-                                        self.logger.info("Job details page loaded (fallback selector found)")
-                                        found_selector = True
-                                    except Exception:
-                                        self.logger.info("Fallback job title selector also not found")
-
-                                # If neither selector was found, raise an exception
-                                if not found_selector:
-                                    raise Exception("Could not find any job details selectors")
-
-                                # Now check if the job has already been applied to
-                                if self.is_already_applied():
-                                    self.logger.info(f"Job #{ember_id} has already been applied to - SKIPPING")
-                                    self.job_search_manager.processed_ids.add(ember_id)
-                                    page_already_applied += 1
-                                    total_already_applied += 1
-                                    new_cards_processed = True
-                                    continue
-
-                            except Exception as wait_error:
-                                self.logger.error(f"Error waiting for job details: {wait_error}")
-                                self.job_search_manager.processed_ids.add(ember_id)
-                                continue
-
-                            time.sleep(2)  # Give extra time for content to settle
-
-                            # Extract information from the job details page
-                            job_title, company_name = self.job_search_manager.extract_job_details()
-
-                            # Filter out jobs based on title
-                            if any([x in job_title.lower() for x in self.job_filters]):
-                                self.logger.info(f"Filtered out job: {job_title} (matched filter)")
-                                self.job_search_manager.processed_ids.add(ember_id)
-                                continue
-
-                            self.logger.info(f"JOB TITLE: {job_title}")
-                            self.logger.info(f"COMPANY NAME: {company_name}")
-
-                            # Get job description - but don't generate resume yet
-                            job_description = self.job_search_manager.get_job_description()
-                            if job_description:
-                                self.form_handler.response_manager.current_job_description = job_description
-                                self.resume_handler.current_job_description = job_description
-
-                            # Check if this is an Easy Apply job and click the button if it is
-                            if self.click_easy_apply():
-                                # Only generate resume after clicking Easy Apply button
-                                if job_description and job_title and company_name:
-                                    self.logger.info("Now generating custom resume after clicking Easy Apply")
-                                    resume_id = self.resume_handler.generate_custom_resume(
-                                        job_title, company_name, job_description
-                                    )
-                                    self.logger.info(f"Generated custom resume ID: {resume_id}")
-
-                                # Handle application process with retry
-                                success = False
-                                for fill_attempt in range(2):
-                                    try:
-                                        if self.fill_in_details():
-                                            success = True
-                                            self.logger.info(f"Successfully applied to job: {job_title}")
-                                            time.sleep(2)
-                                            break
-                                    except Exception as fill_error:
-                                        self.logger.error(f"Application attempt {fill_attempt+1} failed", fill_error)
-                                        try:
-                                            self.close_dialog()
-                                        except:
-                                            pass
-                                        time.sleep(2)
-
-                                if success:
-                                    page_jobs_processed += 1
-                                    total_jobs_processed += 1
-                            else:
-                                self.logger.info(f"Skipping job '{job_title}' - not an Easy Apply job")
-                                page_jobs_skipped += 1
-                                total_jobs_skipped += 1
-
-                            # Clean up after application
-                            self.close_dialog()
-                            # Reset job-specific data
-                            self.form_handler.response_manager.current_job_description = None
-                            self.resume_handler.current_job_description = None
-                            self.resume_handler.current_job_id = None
-
-                            # Mark as processed regardless of success
-                            self.job_search_manager.processed_ids.add(ember_id)
-                            new_cards_processed = True
-
-                        except Exception as e:
-                            self.logger.error(f"Error processing job {ember_id}", e)
-                            try:
-                                self.close_dialog()
-                            except:
-                                pass
-                            self.job_search_manager.processed_ids.add(ember_id)
-
-                    # Load more cards if needed
-                    if not new_cards_processed:
-                        if not self.job_search_manager.load_more_cards(sorted_cards):
-                            break
-
-                self.logger.info(f"Processed {page_jobs_processed} jobs on page {current_page}")
-                self.logger.info(f"Skipped {page_jobs_skipped} jobs on page {current_page} (not Easy Apply)")
-                self.logger.info(f"Skipped {page_already_applied} jobs on page {current_page} (already applied)")
-
-                # Navigate to next page if available
-                if self.job_search_manager.navigate_to_next_page():
-                    current_page += 1
-                else:
-                    self.logger.info("No more pages available or reached the last page")
-                    break
-
-            self.logger.info(f"Finished processing {total_jobs_processed} Easy Apply jobs across {current_page} pages")
-            self.logger.info(f"Skipped {total_jobs_skipped} jobs (not Easy Apply)")
-            self.logger.info(f"Skipped {total_already_applied} jobs (already applied)")
-
+            # Generate a unique run ID for this application run
+            run_id = str(uuid.uuid4())[:8]
+            self.logger.info(f"[RUN:{run_id}] Starting new application run")
+            start_time = datetime.now()
+            
+            # Reset statistics
+            self.stats = {
+                "processed": 0,
+                "skipped": 0, 
+                "already_applied": 0
+            }
+            
+            # Navigate through pages and process jobs
+            self.navigate_pages()
+            
+            # Log run completion
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            self.logger.info(f"[RUN:{run_id}] Application run completed after {duration:.2f} seconds")
+            self.logger.info(f"[RUN:{run_id}] Successfully applied to {self.stats['processed']} jobs")
+            
+            return True
+            
         except Exception as e:
-            self.logger.error("Error in apply method", e)
+            self.logger.error(f"Critical error in apply method: {str(e)}", exc_info=True)
+            return False
+
+
+    def _apply_with_retry(self, job_title, job_trace_id, max_attempts=2):
+        """Apply to a job with retry logic"""
+        for attempt in range(max_attempts):
+            try:
+                self.logger.info(f"[JOB:{job_trace_id}] Application attempt {attempt+1}/{max_attempts} for job: {job_title}")
+                attempt_start_time = datetime.now()
+                
+                if self.fill_in_details():
+                    attempt_duration = (datetime.now() - attempt_start_time).total_seconds()
+                    self.logger.info(f"[JOB:{job_trace_id}] Successfully applied to job: {job_title} on attempt {attempt+1} in {attempt_duration:.2f} seconds")
+                    time.sleep(2)
+                    return True
+                else:
+                    attempt_duration = (datetime.now() - attempt_start_time).total_seconds()
+                    self.logger.warning(f"[JOB:{job_trace_id}] Application attempt {attempt+1} returned False after {attempt_duration:.2f} seconds")
+            except Exception as e:
+                attempt_duration = (datetime.now() - attempt_start_time).total_seconds()
+                self.logger.error(f"[JOB:{job_trace_id}] Application attempt {attempt+1} failed after {attempt_duration:.2f} seconds: {str(e)}", exc_info=True)
+                
+                try:
+                    self.logger.debug(f"[JOB:{job_trace_id}] Attempting to close dialog after failed attempt {attempt+1}")
+                    self.close_dialog()
+                except Exception as cleanup_error:
+                    self.logger.error(f"[JOB:{job_trace_id}] Error cleaning up after failed attempt: {str(cleanup_error)}")
+                    
+                time.sleep(2)
+        
+        self.logger.error(f"[JOB:{job_trace_id}] Failed to apply to job: {job_title} after {max_attempts} attempts")
+        return False

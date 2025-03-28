@@ -3,15 +3,18 @@ import os
 import sys
 from datetime import datetime
 
-def setup_logger(name, log_level=logging.INFO, log_file=None, log_format=None, add_timestamp=True):
+# Import from config
+from src.config.config import LOG_LEVEL, LOG_FORMAT, LOG_DATE_FORMAT
+
+def setup_logger(name, log_level=None, log_file=None, log_format=None, add_timestamp=True):
     """
     Set up a logger that outputs to both console and file if specified.
     
     Args:
         name (str): Logger name
-        log_level (int): Logging level (default: logging.INFO)
+        log_level (int): Logging level (default: from config)
         log_file (str, optional): Path to log file (default: None)
-        log_format (str, optional): Log format string (default: None)
+        log_format (str, optional): Log format string (default: from config)
         add_timestamp (bool): Add timestamp to log filename (default: True)
         
     Returns:
@@ -19,6 +22,11 @@ def setup_logger(name, log_level=logging.INFO, log_file=None, log_format=None, a
     """
     # Create logger
     logger = logging.getLogger(name)
+    
+    # Get log level from config if not specified
+    if log_level is None:
+        log_level_str = LOG_LEVEL
+        log_level = getattr(logging, log_level_str.upper(), logging.INFO)
     
     # Clear any existing handlers to avoid duplicates when reconfiguring
     if logger.hasHandlers():
@@ -29,8 +37,8 @@ def setup_logger(name, log_level=logging.INFO, log_file=None, log_format=None, a
     
     # Create formatter
     if log_format is None:
-        log_format = '%(asctime)s | %(levelname)-8s | %(filename)s:%(lineno)d | %(funcName)s() | %(message)s'
-    formatter = logging.Formatter(log_format, datefmt='%Y-%m-%d %H:%M:%S')
+        log_format = LOG_FORMAT
+    formatter = logging.Formatter(log_format, datefmt=LOG_DATE_FORMAT)
     
     # Create console handler (for stdout)
     console_handler = logging.StreamHandler(sys.stdout)
@@ -87,8 +95,13 @@ def setup_logger(name, log_level=logging.INFO, log_file=None, log_format=None, a
     return logger
 
 # Configure the root logger as well for any uncaught logs
-def setup_root_logger(log_level=logging.INFO, log_file=None, log_format=None, add_timestamp=True):
+def setup_root_logger(log_level=None, log_file=None, log_format=None, add_timestamp=True):
     """Configure the root logger to catch any logs not caught by specific loggers"""
+    # Get log level from config if not specified
+    if log_level is None:
+        log_level_str = LOG_LEVEL
+        log_level = getattr(logging, log_level_str.upper(), logging.INFO)
+        
     root_logger = logging.getLogger()
     
     # Clear any existing handlers
@@ -100,8 +113,8 @@ def setup_root_logger(log_level=logging.INFO, log_file=None, log_format=None, ad
     
     # Create and add handlers similar to setup_logger
     if log_format is None:
-        log_format = '%(asctime)s | %(levelname)-8s | %(name)s | %(filename)s:%(lineno)d | %(funcName)s() | %(message)s'
-    formatter = logging.Formatter(log_format, datefmt='%Y-%m-%d %H:%M:%S')
+        log_format = LOG_FORMAT
+    formatter = logging.Formatter(log_format, datefmt=LOG_DATE_FORMAT)
     
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
@@ -146,40 +159,3 @@ def setup_root_logger(log_level=logging.INFO, log_file=None, log_format=None, ad
         root_logger.addHandler(file_handler)
     
     return root_logger
-
-# Example usage:
-if __name__ == "__main__":
-    # Create a session timestamp once for the entire run
-    session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Set up root logger first to capture all logs
-    setup_root_logger(
-        log_level=logging.DEBUG, 
-        log_file=f"logs/all_logs.log",
-        add_timestamp=True  # Will create e.g., all_logs_20250327_123456.log
-    )
-    
-    # Set up a specific logger with the same timestamp
-    test_logger = setup_logger(
-        "test_logger", 
-        log_level=logging.DEBUG, 
-        log_file=f"logs/test.log",
-        add_timestamp=True
-    )
-    
-    # Log session start
-    test_logger.info(f"=== New Session Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
-    
-    # Test logging at different levels
-    test_logger.debug("This is a debug message")
-    test_logger.info("This is an info message")
-    test_logger.warning("This is a warning message")
-    test_logger.error("This is an error message")
-    test_logger.critical("This is a critical message")
-    
-    # Test logging from a different module
-    other_logger = logging.getLogger("other_module")
-    other_logger.warning("This warning should be caught by the root logger")
-    
-    # Log session end
-    test_logger.info(f"=== Session Ended: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
