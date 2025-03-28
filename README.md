@@ -34,8 +34,8 @@ This tool automates the process of applying to LinkedIn jobs that use the "Easy 
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/linkedin-job-automation.git
-   cd linkedin-job-automation
+   git clone https://github.com/Dkazem91/auto_app.git
+   cd auto_app
    ```
 
 2. Install the package and dependencies:
