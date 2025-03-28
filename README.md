@@ -114,7 +114,12 @@ Run without displaying the browser:
 ```
 python main.py --headless
 ```
+### Examples
 
+```
+python main.py --predefined-query default --location "San Francisco Bay Area" --time-filter month
+python main.py --search --keywords 'PHP developer' --location "San Francisco Bay Area" --time-filter 3600
+```
 ## Project Structure
 
 ```
