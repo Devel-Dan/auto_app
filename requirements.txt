@@ -1,0 +1,20 @@
+# Core dependencies
+playwright>=1.40.0
+python-dotenv>=1.0.0
+
+# Google AI integration
+google-generativeai>=0.3.0
+
+# PDF processing
+weasyprint>=60.1
+markdown>=3.5.1
+beautifulsoup4>=4.12.2
+
+# UI and testing
+pytest>=7.4.0
+
+# Document processing
+pypandoc>=1.12
+
+# LinkedIn specific modules
+# No external packages needed
