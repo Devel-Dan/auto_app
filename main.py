@@ -1,11 +1,5 @@
-#!/usr/bin/env python3
-"""
-LinkedIn Job Application Automation Script
-----------------------------------------
-This script automates the process of applying to Easy Apply jobs on LinkedIn.
-It uses modular architecture with separate components for browser management,
-authentication, job search, form handling, and application management.
-"""
+
+# Update imports at the top of the file
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -21,7 +15,7 @@ from src.core.logger import setup_logger, setup_root_logger
 # Import from config
 from src.config.config import (
     SEARCH_QUERIES, TIME_FILTER_MAPPING, WORK_TYPE_MAPPING, 
-    LOG_LEVEL, APPLICATION_MAPPING
+    LOG_LEVEL, APPLICATION_MAPPING, FILE_PATHS
 )
 
 # Create session timestamp
@@ -33,7 +27,7 @@ log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
 # Setup root logger first to capture any uncaught logs
 root_logger = setup_root_logger(
     log_level=log_level,
-    log_file="logs/all_logs.log",
+    log_file=FILE_PATHS["ROOT_LOG"],
     add_timestamp=True
 )
 
@@ -41,7 +35,7 @@ root_logger = setup_root_logger(
 logger = setup_logger(
     "main", 
     log_level=log_level,
-    log_file="logs/main.log",
+    log_file=FILE_PATHS["MAIN_LOG"],
     add_timestamp=True
 )
 

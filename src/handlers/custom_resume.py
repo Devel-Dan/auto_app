@@ -1,31 +1,29 @@
+# Update imports - only need PROMPTS now
+
+# Update imports - only need PROMPTS now
 from dotenv import load_dotenv
 load_dotenv()
 
 import os
-
 from google import genai
 from google.genai import types
-import os
-import time
 import pathlib
-# Import from config
-from src.config.config import DEFAULT_RESUME_PATH, RESUME_DIR, GEMINI_API_KEY
 
+# Import from config - removed RESUME_GENERATION
+from src.config.config import DEFAULT_RESUME_PATH, RESUME_DIR, GEMINI_API_KEY, PROMPTS
+
+# Use values from config instead of directly from environment variables
 resume_path = DEFAULT_RESUME_PATH
 pdf_file = pathlib.Path(resume_path)
 
-
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-
 class CustomResumeHandler():
-    def __init__(self,  base_resume_file_path=pdf_file, resume_dir=RESUME_DIR, ):
+    def __init__(self, base_resume_file_path=pdf_file, resume_dir=RESUME_DIR):
         self.resume_dir = resume_dir
         self.current_job_description = None
         self.current_job_id = None  # Add this to track the current job
         self.base_resume_file = base_resume_file_path
         # Create resume directory if it doesn't exist
         os.makedirs(self.resume_dir, exist_ok=True)
-        
 
     def generate_custom_resume(self, job_title, company_name, job_description):
         """Generate a custom resume based on the job description using Gemini."""
@@ -36,69 +34,13 @@ class CustomResumeHandler():
         job_title = self.sanitize_filename(job_title)  # Use the sanitize function
         self.current_job_id = f"{company_name}_{job_title}"
 
-        prompt = f""""
-
-I'm applying to a job with the following description:
-({job_description})
-
-You are an expert resume writer and ATS optimization specialist. Your task is to create a highly effective, ATS-friendly resume in Markdown format based on the provided job description and attached resume. Follow these guidelines:
-
-1. Analyze the job description for key skills, qualifications, and keywords.
-2. Review the existing resume for relevant experience and achievements.
-3. Create a new resume that aligns the candidate's qualifications with the job requirements.
-4. Use the following structure, formatting it in Markdown:
-
-# [Candidate Name]
-[City, State] | [Phone] | [Email] | [LinkedIn]
-
-## Professional Summary
-[Concise 2-3 sentence summary tailored to the job description]
-
-## Core Competencies
-- [Skill 1]
-- [Skill 2]
-- [Skill 3]
-[List 6-8 key ]
-
-## Professional Experience
-
-### [Job Title], [Company Name]
-[Start Date] - [End Date]
-
-- [Achievement/responsibility using action verb and metrics]
-- [Achievement/responsibility using action verb and metrics]
-- [Achievement/responsibility using action verb and metrics]
-
-
-[Repeat for each relevant position, focusing on the most recent and relevant roles]
-
-## Education
-
-**[Degree], [Major]**
-[University Name], [Location]
-[Graduation Date]
-
-## Technical Skills
-[List relevant technical skills, separated by commas]
-
-Please generate a tailored, ATS-optimized resume based on these guidelines, the provided job description, and the candidate's existing resume
-
-5. Ensure the resume is concise, typically fitting two pages maximum for extensive experience.
-6. Ensure most recent job contains at least one acheivement that can be related to what the job description is looking for, generate a project if need be, but it must also make sense to the current position.
-7. Professional summary should tie current skills to job description if no direct experience is there, ensure knowledge gaps can be easily closed
-8. Use bullet points for easy readability.
-9. Incorporate keywords from the job description naturally throughout the resume.
-10. Use action verbs and quantify achievements where possible.
-11. Avoid graphics, tables, or complex formatting that may confuse ATS.
-12. Use standard section headings for easy parsing by ATS.
-13. pretend you are being called like an API endpoint and your payload(reponse) is being directly ported into an .md file, every line has to translate correctly as a markdown file.
-14. My linkedin is https://www.linkedin.com/in/dankazaman/
-15. DO NOT ADD ANY '```markdown' and '```' LINES IN YOUR RESPONSE
-"""
-
+        # Get the prompt template from config and format it with just the job description
+        prompt = PROMPTS["RESUME_GENERATION"].format(
+            job_description=job_description
+        )
 
         try:
-            # Request customized resume from Gemini
+            # Request customized resume from Gemini using API key from config
             client = genai.Client(api_key=GEMINI_API_KEY)
             response = client.models.generate_content(
                 model="gemini-2.0-flash", 

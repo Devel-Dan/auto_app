@@ -3,8 +3,8 @@ import time
 import logging
 import os
 
-# Import from config
-from src.config.config import USER_DATA_DIR, HEADLESS_DEFAULT
+# Add this import at the top of the file
+from src.config.config import USER_DATA_DIR, HEADLESS_DEFAULT, TIMING
 
 class BrowserManager:
     """
@@ -18,6 +18,7 @@ class BrowserManager:
         self.playwright = None
         self.browser = None
         self.page = None
+
 
     def __enter__(self):
         try:
@@ -59,10 +60,12 @@ class BrowserManager:
             self.logger.error(f"Error navigating to {url}", e)
             return False
 
-    def wait_and_click(self, selector, timeout=5000, description="element"):
+    # Update the wait_and_click method to use timeout from config
+    def wait_and_click(self, selector, timeout=None, description="element"):
         """Wait for an element and click it with proper error handling"""
         try:
             self.logger.info(f"Waiting for {description}...")
+            timeout = timeout or TIMING["STANDARD_TIMEOUT"]
             self.page.wait_for_selector(selector, timeout=timeout)
             self.page.click(selector)
             self.logger.info(f"Clicked {description}")
@@ -81,9 +84,11 @@ class BrowserManager:
             self.logger.error(f"Error filling {description}", e)
             return False
 
-    def is_element_visible(self, selector, timeout=2000):
+    # Update the is_element_visible method to use timeout from config
+    def is_element_visible(self, selector, timeout=None):
         """Check if an element is visible with error handling"""
         try:
+            timeout = timeout or TIMING["STANDARD_TIMEOUT"]
             return self.page.is_visible(selector, timeout=timeout)
         except Exception:
             return False

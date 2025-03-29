@@ -6,9 +6,7 @@ import time
 from google import genai
 from google.genai import types
 import pathlib
-
-# Import from config
-from src.config.config import FORM_RESPONSES_PATH, DEFAULT_RESUME_PATH, GEMINI_API_KEY
+from src.config.config import FORM_RESPONSES_PATH, DEFAULT_RESUME_PATH, GEMINI_API_KEY, FILE_PATHS, PROMPTS
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -31,12 +29,8 @@ class FormResponseManager:
         
         if not headless:
             # Potential paths to look for the JSON file
-            potential_paths = [
-                'src/data/form_responses.json',
-                'data/form_responses.json',
-                'form_responses.json',
-                os.path.join(os.path.dirname(__file__), '..', 'data', 'form_responses.json')
-            ]
+            potential_paths = FILE_PATHS["FORM_RESPONSES"]
+
             
             # Get default path from config
             default_path = FORM_RESPONSES_PATH
@@ -283,58 +277,24 @@ class FormResponseManager:
     def get_gemini_response(self, question_text, options=None, error=None, saves=True):
         """
         Get response from Gemini and optionally save it.
-        
-        Args:
-            question_text (str): Question text
-            options (list, optional): Available options
-            error (str, optional): Error context
-            saves (bool, optional): Whether to save the response
-        
-        Returns:
-            Generated response
         """
         logger.info(f"\nGetting gemini response for question: {question_text}")
-        error = f"IMPORTANT: {error}!!!" if error else ""
+        error_text = f"IMPORTANT: {error}!!!" if error else ""
         if options:
             logger.info(f"Available options: {options}")
-            
+            options_text = f"Available options: {', '.join(options)}"
+        else:
+            options_text = ""
+
         try:
-            prompt = f"""You are an AI assistant helping a software developer fill out a LinkedIn job application. Answer the following question concisely and directly, optimizing for the applicant's chances of being hired. Base your response on the provided context, resume, and job description.
+            # Format the prompt template from config
+            prompt = PROMPTS["FORM_RESPONSE"].format(
+                question_text=question_text,
+                options_text=options_text,
+                job_description=self.current_job_description if self.current_job_description else "no job description given",
+                error_text=error_text
+            )
 
-Question: {question_text}
-
-{f"Available options: {', '.join(options)}" if options else ""}
-
-Job Description:
-{self.current_job_description if self.current_job_description else "no job description given"}
-
-{error}
-
-Applicant Context:
-- Software Developer with experience in Python, AWS, Testing, and DevOps
-- US Citizen based in San Francisco, no sponsorship required
-- Currently employed, available immediately
-- Open to remote, hybrid, or in-office work
-- Bachelor's Degree in Business Administration
-- Willing to relocate if needed
-- Prefers not to disclose demographic information when possible
-- looking for 100k to 120k salary, or hourly equivalent 
-
-Response Guidelines:
-1. Provide a direct answer without explanations or additional text.
-2. Always align responses with the job description requirements.
-3. If there's a negative difference between the applicant's profile and the job requirements, response should match what the job is asking for.
-4. For experience-related questions, assume the applicant has relevant experience from their resume or can quickly acquire it.
-5. For years of experience, use the job posting's required years if mentioned, otherwise default to 2-3 years.
-6. For open-ended questions, provide a concise, relevant response based on the resume and job description.
-7. For multiple-choice questions, select the most favorable option that aligns with both the applicant's profile and job requirements.
-8. Tailor the response to highlight strengths and match job requirements, even if it requires slight exaggeration of skills or experience.
-9. do not provide any estimations, always choose more desirable answer, in reference to the job description, if a range is determined (2-3 YOE -> 3)
-10. do not add any units. Most questions that ask for an amount are being entered for a database, so only want numbers (2-3 years -> 3, $120,000 a year -> 120000)
-11. give human responses not too professional and AI sounding.
-
-Answer:
-"""
             logger.info("Sending request to gemini...")
             client = genai.Client(api_key=GEMINI_API_KEY)
             response = client.models.generate_content(
@@ -349,17 +309,17 @@ Answer:
             )
             answer = response.text.strip()
             logger.info(f"Gemini's response: {answer}")
-            
+
             # Save the response
             if saves:
                 self.add_response(question_text, answer, options, source="gemini")
-            
+
             if options:
                 matched_option = self._find_closest_option(answer, options)
                 logger.info(f"Matched to option: {matched_option}")
                 return matched_option
             return answer
-            
+
         except Exception as e:
             logger.error(f"Error getting gemini response: {e}")
             return None

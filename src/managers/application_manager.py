@@ -3,6 +3,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
+from src.config.config import TIMING, DEFAULT_RESUME_PATH
 
 class ApplicationManager:
     """
@@ -32,30 +33,31 @@ class ApplicationManager:
         self.logger.info(f"[SESSION:{self.session_id}] ApplicationManager initialized at {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         self.logger.info(f"[SESSION:{self.session_id}] Using {len(self.job_filters)} job filters: {', '.join(self.job_filters[:5])}{'...' if len(self.job_filters) > 5 else ''}")
 
+    # In the close_dialog method, update timeout values
     def close_dialog(self):
         """Close any open dialog, handling both application form and confirmation dialogs"""
         try:
             self.logger.info("Attempting to close dialog...")
-
+    
             # Try different close button selectors
             for selector in self.selectors["CLOSE_BUTTON"]:
                 try:
                     # Check if the selector exists and is visible
-                    if self.browser_manager.is_element_visible(selector, timeout=1000):
+                    if self.browser_manager.is_element_visible(selector, timeout=TIMING["SHORT_SLEEP"] * 1000):
                         self.logger.info(f"Found close button with selector: {selector}")
-
+    
                         # Wait for any loaders to disappear
                         loader = self.page.query_selector(".jobs-loader")
                         if loader and loader.is_visible():
                             self.logger.info("Waiting for loader to disappear...")
-                            self.page.wait_for_selector(".jobs-loader", state="hidden", timeout=5000)
-
+                            self.page.wait_for_selector(".jobs-loader", state="hidden", timeout=TIMING["EXTENDED_TIMEOUT"])
+    
                         # Click the button
-                        self.page.click(selector, timeout=5000)
+                        self.page.click(selector, timeout=TIMING["EXTENDED_TIMEOUT"])
                         self.logger.info("Successfully clicked close button")
-
+    
                         # Verify dialog is closed
-                        if not self.browser_manager.is_element_visible(".artdeco-modal", timeout=1000):
+                        if not self.browser_manager.is_element_visible(".artdeco-modal", timeout=TIMING["STANDARD_TIMEOUT"]):
                             self.logger.info("Dialog closed successfully")
                             return True
                 except Exception as e:
@@ -64,29 +66,29 @@ class ApplicationManager:
                 
             # If direct clicks fail, try alternative approaches
             self.logger.info("Direct close button clicks failed, trying alternatives...")
-
+    
             # Try the "Not now" button in the confirmation dialog
             if self.browser_manager.is_element_visible(self.selectors["NAVIGATION"]["NOT_NOW"]):
                 self.logger.info("Clicking 'Not now' button")
                 self.page.click(self.selectors["NAVIGATION"]["NOT_NOW"])
                 return True
-
+    
             # Try Escape key as last resort
             self.logger.info("Trying Escape key")
             self.page.keyboard.press("Escape")
-
+    
             # Final check if dialog closed
-            if not self.browser_manager.is_element_visible(".artdeco-modal", timeout=2000):
+            if not self.browser_manager.is_element_visible(".artdeco-modal", timeout=TIMING["MEDIUM_SLEEP"] * 1000):
                 self.logger.info("Dialog closed with alternative method")
                 return True
-
+    
             self.logger.info("Failed to close dialog with all methods")
             return False
-
+    
         except Exception as e:
             self.logger.error("Error closing dialog", e)
             return False
-
+        
     def click_easy_apply(self):
         """
         Check if the job has an Easy Apply button and click it if present.
@@ -105,17 +107,24 @@ class ApplicationManager:
             easy_apply_button = self.page.query_selector(self.selectors["EASY_APPLY_BUTTON"])
             if easy_apply_button:
                 # Ensure the page is stable before clicking
-                time.sleep(1)
+                time.sleep(TIMING["SHORT_SLEEP"])
                 self.logger.info("Easy Apply button found, clicking...")
                 easy_apply_button.click()
 
                 # Wait for any scrolling animations to complete
-                time.sleep(2)
+                time.sleep(TIMING["MEDIUM_SLEEP"])
 
-                # Check if ANY modal dialog appeared - either regular form or safety dialog
-                any_modal_visible = self.browser_manager.is_element_visible("div[role='dialog']", timeout=5000)
+                # Check for standard modal dialog
+                modal_visible = self.browser_manager.is_element_visible(self.selectors["MODAL"], timeout=TIMING["STANDARD_TIMEOUT"])
 
-                if any_modal_visible:
+                # Check for safety dialog specifically
+                safety_dialog_visible = self.browser_manager.is_element_visible(
+                    self.selectors["SAFETY_DIALOG"]["CONTAINER"], 
+                    timeout=TIMING["STANDARD_TIMEOUT"]
+                )
+
+                # If either type of dialog appeared, we're good
+                if modal_visible or safety_dialog_visible:
                     self.logger.info("A modal dialog appeared after clicking Easy Apply")
                     return True
                 else:
@@ -142,10 +151,16 @@ class ApplicationManager:
                         self.logger.info("JavaScript click failed to find an Easy Apply button")
 
                     # Wait and check for any modal again
-                    time.sleep(3)
-                    any_modal_visible = self.browser_manager.is_element_visible("div[role='dialog']", timeout=2000)
+                    time.sleep(TIMING["LONG_SLEEP"])
 
-                    if any_modal_visible:
+                    # Check for both types of dialogs again
+                    modal_visible = self.browser_manager.is_element_visible(self.selectors["MODAL"], timeout=TIMING["MEDIUM_SLEEP"] * 1000)
+                    safety_dialog_visible = self.browser_manager.is_element_visible(
+                        self.selectors["SAFETY_DIALOG"]["CONTAINER"],
+                        timeout=TIMING["MEDIUM_SLEEP"] * 1000
+                    )
+
+                    if modal_visible or safety_dialog_visible:
                         self.logger.info("Modal dialog appeared after JavaScript click")
                         return True
                     else:
@@ -354,16 +369,37 @@ class ApplicationManager:
         """Handle form filling for LinkedIn Easy Apply with resume already generated."""
         try:
             # Click Easy Apply button if we haven't already
-            if not self.browser_manager.is_element_visible(self.selectors["MODAL"]):
+            if not (self.browser_manager.is_element_visible(self.selectors["MODAL"]) or 
+                    self.browser_manager.is_element_visible(self.selectors["SAFETY_DIALOG"]["CONTAINER"])):
                 self.click_easy_apply()
 
             # Process the application form
             while True:
-                time.sleep(2)  # Wait for form to load
+                time.sleep(TIMING["MEDIUM_SLEEP"])  # Wait for form to load
+
+                # Check if we're on a safety dialog and handle it
+                safety_dialog = self.page.query_selector(self.selectors["SAFETY_DIALOG"]["CONTAINER"])
+                if safety_dialog:
+                    self.logger.info("Processing safety reminder dialog")
+                    continue_button = safety_dialog.query_selector(self.selectors["SAFETY_DIALOG"]["CONTINUE_BUTTON"])
+
+                    if continue_button:
+                        self.logger.info("Clicking 'Continue applying' button")
+                        continue_button.click()
+                        time.sleep(TIMING["MEDIUM_SLEEP"])
+                        continue  # Skip to next iteration
+                    else:
+                        # Fallback to any apply button in the dialog
+                        apply_button = safety_dialog.query_selector(self.selectors["SAFETY_DIALOG"]["APPLY_BUTTON"])
+                        if apply_button:
+                            self.logger.info("Clicking apply button from safety dialog")
+                            apply_button.click()
+                            time.sleep(TIMING["MEDIUM_SLEEP"])
+                            continue  # Skip to next iteration
 
                 # Check if this is an education section
-                education_section = self.page.query_selector("h3.t-16.mb2:has-text('Education')")
-                
+                education_section = self.page.query_selector(self.selectors["EDUCATION"]["SECTION_HEADER"])
+
                 # Check for resume upload/selection section at each step
                 resume_section_visible = (
                     self.browser_manager.is_element_visible(self.selectors["RESUME_SECTION"]) or
@@ -386,9 +422,8 @@ class ApplicationManager:
                         self.upload_custom_resume(custom_resume_path)
                     else:
                         self.logger.info("No custom resume available, using default")
-                        # Use a default resume path here
-                        default_resume_path = os.getenv('DEFAULT_RESUME_PATH', "default_resume.pdf")  # Update this to your default resume path
-                        self.upload_custom_resume(default_resume_path)
+                        # Use default resume path from config
+                        self.upload_custom_resume(DEFAULT_RESUME_PATH)
 
                 if education_section:
                     # Handle the education section with our specialized function
@@ -400,7 +435,7 @@ class ApplicationManager:
                     # Fill all form fields with the general handler
                     self.form_handler.handle_form_fields()
 
-                # Handle navigation
+                # Handle navigation - will also check for safety dialog
                 if self.form_handler.handle_navigation():
                     break
 
@@ -409,7 +444,7 @@ class ApplicationManager:
         except Exception as e:
             self.logger.error("Error in fill_in_details", e)
             return False
-
+        
     def is_already_applied(self):
         """
         Check if the current job has already been applied to by looking for

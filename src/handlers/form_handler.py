@@ -1,6 +1,7 @@
 import time
 import logging
 from datetime import datetime
+from src.config.config import SELECTORS, EDUCATION_DEFAULTS, TIMING
 
 class FormHandler:
     """
@@ -1536,47 +1537,47 @@ class FormHandler:
         Specifically handle the education date fields which are complex with multiple select dropdowns.
         """
         try:
-            # Check for education section header
-            education_header = self.page.query_selector("h3.t-16.mb2:has-text('Education')")
-
+            # Check for education section header using selector from config
+            education_header = self.page.query_selector(SELECTORS["EDUCATION"]["SECTION_HEADER"])
+    
             if not education_header:
                 return False
-
+    
             self.logger.info("Detected education section, handling with default values...")
-
-            # Find the date-range fieldsets
-            from_fieldset = self.page.query_selector('fieldset[data-test-date-dropdown="start"]')
-            to_fieldset = self.page.query_selector('fieldset[data-test-date-dropdown="end"]')
-
+    
+            # Find the date-range fieldsets using selectors from config
+            from_fieldset = self.page.query_selector(SELECTORS["EDUCATION"]["START_FIELDSET"])
+            to_fieldset = self.page.query_selector(SELECTORS["EDUCATION"]["END_FIELDSET"])
+    
             if not from_fieldset or not to_fieldset:
                 self.logger.info("Could not find date range fieldsets")
                 return False
-
+    
             # Find month and year selects in "From" date
-            from_month_select = from_fieldset.query_selector('select[data-test-month-select]')
-            from_year_select = from_fieldset.query_selector('select[data-test-year-select]')
-
+            from_month_select = from_fieldset.query_selector(SELECTORS["EDUCATION"]["MONTH_SELECT"])
+            from_year_select = from_fieldset.query_selector(SELECTORS["EDUCATION"]["YEAR_SELECT"])
+    
             # Find month and year selects in "To" date
-            to_month_select = to_fieldset.query_selector('select[data-test-month-select]')
-            to_year_select = to_fieldset.query_selector('select[data-test-year-select]')
-
+            to_month_select = to_fieldset.query_selector(SELECTORS["EDUCATION"]["MONTH_SELECT"])
+            to_year_select = to_fieldset.query_selector(SELECTORS["EDUCATION"]["YEAR_SELECT"])
+    
             # Make sure we found all selects
             if not all([from_month_select, from_year_select, to_month_select, to_year_select]):
                 self.logger.info("Could not find all date select dropdowns")
                 return False
-
-            # Set education start date (January 2009)
-            self.logger.info("Setting education start date to January 2009...")
-            self.browser_manager.safe_set_value(from_month_select, "1", "select")  # January
-            self.browser_manager.safe_set_value(from_year_select, "2009", "select")
-
-            # Set education end date (August 2014)
-            self.logger.info("Setting education end date to August 2014...")
-            self.browser_manager.safe_set_value(to_month_select, "8", "select")  # August
-            self.browser_manager.safe_set_value(to_year_select, "2014", "select")
-
+    
+            # Set education start date using values from config
+            self.logger.info(f"Setting education start date to month {EDUCATION_DEFAULTS['start_month']} year {EDUCATION_DEFAULTS['start_year']}...")
+            self.browser_manager.safe_set_value(from_month_select, EDUCATION_DEFAULTS["start_month"], "select")
+            self.browser_manager.safe_set_value(from_year_select, EDUCATION_DEFAULTS["start_year"], "select")
+    
+            # Set education end date using values from config
+            self.logger.info(f"Setting education end date to month {EDUCATION_DEFAULTS['end_month']} year {EDUCATION_DEFAULTS['end_year']}...")
+            self.browser_manager.safe_set_value(to_month_select, EDUCATION_DEFAULTS["end_month"], "select")
+            self.browser_manager.safe_set_value(to_year_select, EDUCATION_DEFAULTS["end_year"], "select")
+    
             # Check for "I currently attend" checkbox
-            current_attend_checkbox = self.page.query_selector('input[type="checkbox"][id*="present"]')
+            current_attend_checkbox = self.page.query_selector(SELECTORS["EDUCATION"]["CURRENT_CHECKBOX"])
             if current_attend_checkbox:
                 # Make sure it's unchecked
                 if current_attend_checkbox.is_checked():
@@ -1584,45 +1585,40 @@ class FormHandler:
                     self.logger.info("Unchecked 'I currently attend this institution' checkbox")
                 else:
                     self.logger.info("'I currently attend this institution' checkbox already unchecked")
-
-            # Find and fill school field - using a simpler approach
-            school_options = [
-                'select[id*="School"]', 
-                'select[id*="multipleChoice"]'
-            ]
-
-            for selector in school_options:
+    
+            # Find and fill school field - using selectors from config
+            for selector in SELECTORS["EDUCATION"]["SCHOOL_SELECT"]:
                 school_select = self.page.query_selector(selector)
                 if school_select:
-                    self.browser_manager.safe_set_value(school_select, "North Carolina State University", "select")
-                    self.logger.info("Set school to North Carolina State University")
+                    self.browser_manager.safe_set_value(school_select, EDUCATION_DEFAULTS["university"], "select")
+                    self.logger.info(f"Set school to {EDUCATION_DEFAULTS['university']}")
                     break
                 
             # Find and fill degree field
-            degree_select = self.page.query_selector('select[id*="Degree"]')
+            degree_select = self.page.query_selector(SELECTORS["EDUCATION"]["DEGREE_SELECT"])
             if not degree_select:
                 # Try alternative selector based on the HTML
-                degree_select = self.page.query_selector('select[id*="multipleChoice"]')
-
+                degree_select = self.page.query_selector(SELECTORS["EDUCATION"]["SCHOOL_SELECT"][1])
+    
             if degree_select:
-                self.browser_manager.safe_set_value(degree_select, "Bachelor's Degree", "select")
-                self.logger.info("Set degree to Bachelor's Degree")
-
+                self.browser_manager.safe_set_value(degree_select, EDUCATION_DEFAULTS["degree"], "select")
+                self.logger.info(f"Set degree to {EDUCATION_DEFAULTS['degree']}")
+    
             # Find and fill discipline field
-            discipline_select = self.page.query_selector('select[id*="Discipline"]')
+            discipline_select = self.page.query_selector(SELECTORS["EDUCATION"]["DISCIPLINE_SELECT"])
             if not discipline_select:
                 # Try to find it with a more general selector if not found directly
-                all_selects = self.page.query_selector_all('select[id*="multipleChoice"]')
+                all_selects = self.page.query_selector_all(SELECTORS["EDUCATION"]["SCHOOL_SELECT"][1])
                 if len(all_selects) >= 3:  # If we have at least 3 dropdown fields, the 3rd is likely discipline
                     discipline_select = all_selects[2]
-
+    
             if discipline_select:
-                self.browser_manager.safe_set_value(discipline_select, "Computer Science", "select")
-                self.logger.info("Set discipline to Computer Science")
-
+                self.browser_manager.safe_set_value(discipline_select, EDUCATION_DEFAULTS["discipline"], "select")
+                self.logger.info(f"Set discipline to {EDUCATION_DEFAULTS['discipline']}")
+    
             self.logger.info("Successfully handled education fields with default values")
             return True
-
+    
         except Exception as e:
             self.logger.error("Error handling education date fields", e)
             return False
@@ -1921,34 +1917,34 @@ class FormHandler:
         """Handle navigation buttons within the modal and return True if form is complete."""
         self.logger.info("\nHandling form navigation...")
 
-        # Check for job safety reminder dialog first
-        safety_dialog = self.page.query_selector("div[aria-labelledby='header']:has(h2#header:has-text('Job search safety reminder'))")
+        # Check for job safety reminder dialog first using selectors from config
+        safety_dialog = self.page.query_selector(self.selectors["SAFETY_DIALOG"]["CONTAINER"])
         if safety_dialog:
             self.logger.info("Job safety reminder dialog detected during navigation!")
-            continue_button = safety_dialog.query_selector("button:has-text('Continue applying')")
-            
+            continue_button = safety_dialog.query_selector(self.selectors["SAFETY_DIALOG"]["CONTINUE_BUTTON"])
+
             if continue_button:
                 self.logger.info("Clicking 'Continue applying' button")
                 continue_button.click()
-                time.sleep(2)  # Wait for transition
+                time.sleep(TIMING["MEDIUM_SLEEP"])  # Wait for transition using timing from config
                 return False  # Return false to continue the application process
             else:
                 # Fallback to any apply button in the dialog
-                apply_button = safety_dialog.query_selector(".jobs-apply-button")
+                apply_button = safety_dialog.query_selector(self.selectors["SAFETY_DIALOG"]["APPLY_BUTTON"])
                 if apply_button:
                     self.logger.info("Clicking apply button from safety dialog")
                     apply_button.click()
-                    time.sleep(2)
+                    time.sleep(TIMING["MEDIUM_SLEEP"])  # Using timing from config
                     return False  # Continue the process
-                    
+
                 self.logger.warning("Could not find button to proceed in safety dialog")
                 # Try to close the dialog and retry
                 self.close_dialog()
                 return False  # Try to continue with the process
-                # Define the modal selector
-                
+
+        # Define the modal selector
         modal = self.page.query_selector(self.selectors["MODAL"])
-    
+
         if not modal:
             self.logger.info("Easy Apply modal not found!")
             return True

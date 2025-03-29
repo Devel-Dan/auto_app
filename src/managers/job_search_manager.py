@@ -3,7 +3,7 @@ import urllib.parse
 import time
 
 # Import from config
-from src.config.config import TIME_FILTER_MAPPING, WORK_TYPE_MAPPING
+from src.config.config import TIME_FILTER_MAPPING, WORK_TYPE_MAPPING, LINKEDIN_PARAMS, TIMING
 
 class JobSearchManager:
     """
@@ -70,7 +70,7 @@ class JobSearchManager:
                 self.logger.debug(f"Added location parameter: {location}")
 
             # Add Easy Apply filter
-            params.append("f_AL=true")
+            params.append(LINKEDIN_PARAMS["EASY_APPLY"])
             self.logger.debug("Added Easy Apply filter")
 
             # Add time filter based on setting - using TIME_FILTER_MAPPING from config
@@ -87,28 +87,23 @@ class JobSearchManager:
             if work_types is None:
                 work_types = []
                 if remote_only or location.lower() == "remote":
-                    work_types.append("2")  # Remote
+                    work_types.append(WORK_TYPE_MAPPING["remote"])  # Use config value for remote
                 else:
                     # Include multiple work types if not strictly remote
-                    work_types.extend(["2", "1", "3"])  # Remote, Onsite, Hybrid
+                    work_types.extend([WORK_TYPE_MAPPING["remote"], WORK_TYPE_MAPPING["onsite"], WORK_TYPE_MAPPING["hybrid"]])  # Use config values
 
             if work_types:
-                params.append(f"f_WT={urllib.parse.quote('%2C'.join(work_types))}")
+                params.append(f"f_WT={urllib.parse.quote(LINKEDIN_PARAMS['URL_COMMA'].join(work_types))}")
                 self.logger.debug(f"Added work type filter: {work_types}")
 
             # Add refresh and origin parameters
-            params.extend([
-                "refresh=true",
-                "origin=JOB_SEARCH_PAGE_SEARCH_BUTTON"
-            ])
+            params.append(LINKEDIN_PARAMS["REFRESH"])
+            params.append(LINKEDIN_PARAMS["ORIGIN"])
 
             # Combine all parameters into final URL
             search_url = f"{base_url}?{'&'.join(params)}"
 
             self.logger.info(f"Navigating to search URL: {search_url[:100]}...")
-
-            # Navigate to the constructed URL
-            self.browser_manager.navigate(search_url)
 
             # Navigate to the constructed URL
             self.browser_manager.navigate(search_url)
@@ -119,7 +114,7 @@ class JobSearchManager:
             
             # Add a small delay for page stability
             self.logger.debug("Adding a small delay for page stability...")
-            time.sleep(3)
+            time.sleep(TIMING["LONG_SLEEP"])
 
             self.logger.info("Search completed and page appears to be loaded")
 
@@ -151,95 +146,94 @@ class JobSearchManager:
         return True
 
     def find_top_picks_and_easy_apply_jobs(self, remote_only=True, work_types=None):
-            """
-            Navigate to LinkedIn jobs page, find top picks, and apply filters
+        """
+        Navigate to LinkedIn jobs page, find top picks, and apply filters
 
-            Args:
-                remote_only: Whether to filter for remote jobs (default: True)
-                work_types: List of work types to filter for (valid values: 'remote', 'onsite', 'hybrid')
-                            If None and remote_only=True, defaults to just remote
-                            If None and remote_only=False, includes all work types
-            """
+        Args:
+            remote_only: Whether to filter for remote jobs (default: True)
+            work_types: List of work types to filter for (valid values: 'remote', 'onsite', 'hybrid')
+                        If None and remote_only=True, defaults to just remote
+                        If None and remote_only=False, includes all work types
+        """
+        try:
+            # Navigate to jobs page
+            jobs_url = self.url + self.jobs_endpoint
+            self.logger.info(f"Navigating to jobs page: {jobs_url}")
+
+            # Build parameters string
+            params = []
+
+            # Add Easy Apply filter
+            params.append(LINKEDIN_PARAMS["EASY_APPLY"])
+            self.logger.debug("Added Easy Apply filter")
+
+            # Add time filter
+            if isinstance(self.time_filter, str) and self.time_filter.startswith('r') and self.time_filter[1:].isdigit():
+                time_param = self.time_filter  # Already in correct format
+            else:
+                time_param = TIME_FILTER_MAPPING.get(self.time_filter, "r86400")
+
+            if time_param:
+                params.append(f"f_TPR={time_param}")
+                self.logger.debug(f"Added time filter parameter: {self.time_filter} ({time_param})")
+
+            # Handle work type filtering
+            if work_types is None:
+                # Default behavior based on remote_only flag
+                if remote_only:
+                    params.append(f"f_WT={WORK_TYPE_MAPPING['remote']}")  # Remote work
+                    self.logger.debug("Added remote work filter")
+                # If remote_only is False and no work_types specified, don't add any filter (show all)
+            else:
+                # Convert string work types to codes and filter out invalid ones
+                type_codes = [WORK_TYPE_MAPPING.get(wt.lower(), "") for wt in work_types 
+                            if wt.lower() in WORK_TYPE_MAPPING]
+
+                if type_codes:
+                    # Join multiple work types with commas for URL
+                    work_type_param = LINKEDIN_PARAMS["URL_COMMA"].join(type_codes)
+                    params.append(f"f_WT={work_type_param}")
+                    self.logger.debug(f"Added work type filter: {work_type_param} (from {work_types})")
+
+            # Add other useful parameters
+            params.append(LINKEDIN_PARAMS["REFRESH"])
+
+            # Construct URL with parameters
+            filtered_url = f"{self.url}/jobs/collections/recommended/?{'&'.join(params)}"
+
+            self.logger.info(f"Navigating to filtered top picks: {filtered_url}")
+            self.browser_manager.navigate(filtered_url)
+
+            # Wait for page to load
+            self.logger.debug("Waiting for page to load")
+            self.page.wait_for_load_state("networkidle")
+            time.sleep(TIMING["LONG_SLEEP"])
+
+            # Log some information about the results
             try:
-                # Navigate to jobs page
-                jobs_url = self.url + self.jobs_endpoint
-                self.logger.info(f"Navigating to jobs page: {jobs_url}")
-
-                # Build parameters string
-                params = []
-
-                # Add Easy Apply filter
-                params.append("f_AL=true")
-                self.logger.debug("Added Easy Apply filter")
-
-                # Add time filter - using TIME_FILTER_MAPPING from config
-                if isinstance(self.time_filter, str) and self.time_filter.startswith('r') and self.time_filter[1:].isdigit():
-                    time_param = self.time_filter  # Already in correct format
-                else:
-                    time_param = TIME_FILTER_MAPPING.get(self.time_filter, "r86400")
-
-                if time_param:
-                    params.append(f"f_TPR={time_param}")
-                    self.logger.debug(f"Added time filter parameter: {self.time_filter} ({time_param})")
-
-                # Handle work type filtering
-                if work_types is None:
-                    # Default behavior based on remote_only flag
-                    if remote_only:
-                        params.append("f_WT=2")  # 2 = Remote work
-                        self.logger.debug("Added remote work filter")
-                    # If remote_only is False and no work_types specified, don't add any filter (show all)
-                else:
-                    # Map string work types to LinkedIn's numeric codes - using WORK_TYPE_MAPPING from config
-                    # Convert string work types to codes and filter out invalid ones
-                    type_codes = [WORK_TYPE_MAPPING.get(wt.lower(), "") for wt in work_types 
-                                if wt.lower() in WORK_TYPE_MAPPING]
-
-                    if type_codes:
-                        # Join multiple work types with commas for URL
-                        work_type_param = "%2C".join(type_codes)  # URL-encoded comma ","
-                        params.append(f"f_WT={work_type_param}")
-                        self.logger.debug(f"Added work type filter: {work_type_param} (from {work_types})")
-
-                # Add other useful parameters
-                params.append("refresh=true")
-
-                # Construct URL with parameters
-                filtered_url = f"{self.url}/jobs/collections/recommended/?{'&'.join(params)}"
-
-                self.logger.info(f"Navigating to filtered top picks: {filtered_url}")
-                self.browser_manager.navigate(filtered_url)
-
-                # Wait for page to load
-                self.logger.debug("Waiting for page to load")
-                self.page.wait_for_load_state("networkidle")
-                time.sleep(3)
-
-                # Log some information about the results
-                try:
-                    job_count_element = self.page.query_selector(".jobs-search-results-list__title-heading")
-                    if job_count_element:
-                        job_count_text = job_count_element.inner_text()
-                        self.logger.info(f"Recommended jobs header: {job_count_text}")
-                except Exception as e:
-                    self.logger.debug(f"Could not extract job count: {e}")
-
-                self.logger.info("Successfully set up jobs with filters! Ready for job processing.")
-                return True
-
+                job_count_element = self.page.query_selector(".jobs-search-results-list__title-heading")
+                if job_count_element:
+                    job_count_text = job_count_element.inner_text()
+                    self.logger.info(f"Recommended jobs header: {job_count_text}")
             except Exception as e:
-                self.logger.error(f"Error finding top picks and applying filters: {e}", exc_info=True)
-                return False
+                self.logger.debug(f"Could not extract job count: {e}")
+
+            self.logger.info("Successfully set up jobs with filters! Ready for job processing.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error finding top picks and applying filters: {e}", exc_info=True)
+            return False
 
     def get_job_cards(self):
         """Get all job cards from the current page with better error handling"""
         try:
             # Wait for the job cards to appear with a generous timeout
             self.logger.debug(f"Waiting for job cards with selector: {self.selectors['JOB_CARDS']}")
-            self.page.wait_for_selector(self.selectors["JOB_CARDS"], timeout=10000)
+            self.page.wait_for_selector(self.selectors["JOB_CARDS"], timeout=TIMING["EXTENDED_TIMEOUT"])
 
             # Add a small delay to ensure everything is rendered
-            time.sleep(1)
+            time.sleep(TIMING["SHORT_SLEEP"])
 
             # Query all job cards
             job_cards = self.page.query_selector_all(self.selectors["JOB_CARDS"])
@@ -249,7 +243,7 @@ class JobSearchManager:
                 # If no cards found, try scrolling a bit and retry
                 self.logger.debug("No job cards found initially, scrolling and retrying")
                 self.page.evaluate("window.scrollBy(0, 300)")
-                time.sleep(2)
+                time.sleep(TIMING["MEDIUM_SLEEP"])
                 job_cards = self.page.query_selector_all(self.selectors["JOB_CARDS"])
                 self.logger.info(f"After scroll, found {len(job_cards)} job cards")
 
@@ -285,7 +279,7 @@ class JobSearchManager:
         try:
             # Wait for the job description to load
             self.logger.debug(f"Waiting for job description with selector: {self.selectors['JOB_DESCRIPTION']}")
-            self.page.wait_for_selector(self.selectors["JOB_DESCRIPTION"], timeout=5000)
+            self.page.wait_for_selector(self.selectors["JOB_DESCRIPTION"], timeout=TIMING["STANDARD_TIMEOUT"])
 
             # Extract the text content
             description_element = self.page.query_selector(self.selectors["JOB_DESCRIPTION"])
@@ -367,12 +361,12 @@ class JobSearchManager:
                         element.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
                     }}
                 """)
-                time.sleep(1 + attempts * 0.5)
+                time.sleep(TIMING["SHORT_SLEEP"] + attempts * 0.5)
                 self.logger.debug(f"Scroll attempt {attempts+1} successful")
                 break
             except Exception as e:
                 self.logger.error(f"Scroll attempt {attempts+1} failed: {e}")
-                time.sleep(1 + attempts)
+                time.sleep(TIMING["SHORT_SLEEP"] + attempts)
 
                 # If last attempt, try a different approach
                 if attempts == 2:
@@ -381,13 +375,13 @@ class JobSearchManager:
                     self.page.evaluate(f"""
                         window.scrollBy(0, {250 * (sorted_cards.index((card, ember_num, ember_id)) + 1)});
                     """)
-                    time.sleep(2)
+                    time.sleep(TIMING["MEDIUM_SLEEP"])
 
     def load_more_cards(self, current_cards):
         """Load more job cards by scrolling down."""
         self.logger.info("No new cards processed, scrolling to load more...")
         self.page.evaluate("window.scrollBy(0, 500)")
-        time.sleep(3)
+        time.sleep(TIMING["LONG_SLEEP"])
 
         # Check if we loaded new cards
         new_cards = self.page.query_selector_all(self.selectors["JOB_CARDS"])
@@ -465,7 +459,7 @@ class JobSearchManager:
 
                 # Wait for page to load
                 self.page.wait_for_load_state()
-                time.sleep(5)  # Give some extra time for results to load
+                time.sleep(TIMING["PAGE_LOAD_WAIT"])  # Give some extra time for results to load
 
                 return True
 
@@ -488,7 +482,7 @@ class JobSearchManager:
             self.logger.info("Checking if job has Easy Apply...")
             
             # Wait for any button to appear
-            self.page.wait_for_selector(".jobs-apply-button", timeout=5000)
+            self.page.wait_for_selector(".jobs-apply-button", timeout=TIMING["STANDARD_TIMEOUT"])
             
             # Get the apply button
             apply_button = self.page.query_selector(".jobs-apply-button")
