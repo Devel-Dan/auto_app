@@ -1296,7 +1296,7 @@ class FormHandler:
                 else:
                     self.logger.error(f"Could not find fieldset for text: {element}")
                     return False
-    
+
             # Determine if this is a fieldset or a checkbox
             element_type = None
             try:
@@ -1334,46 +1334,73 @@ class FormHandler:
                 # This is a fieldset - check for errors on the fieldset
                 fieldset = element
                 has_error, error_message = self.check_field_has_error(fieldset)
-    
+
             # Get question text for the checkbox or group
             question_text = ""
             available_options = []
-    
+
             if fieldset:
-                # For a checkbox group, get the legend text
+                # First try: For a checkbox group, get the legend text
                 legend = fieldset.query_selector("legend")
                 if legend:
                     raw_question_text = legend.inner_text().strip()
                     question_text = self.response_manager.clean_question_text(raw_question_text)
                     self.logger.info(f"\nProcessing checkbox group: {question_text}")
-    
-                    # Get all available options from the fieldset
-                    checkboxes = fieldset.query_selector_all('input[type="checkbox"]')
-                    for checkbox in checkboxes:
-                        try:
-                            # Get option text from associated label
-                            checkbox_id = checkbox.get_attribute("id")
-                            if checkbox_id:
-                                # Use CSS.escape for IDs with special characters
-                                escaped_id = self.css_escape(checkbox_id)
-                                label = self.page.query_selector(f"label[for='{escaped_id}']")
-                                if label:
-                                    option_text = label.inner_text().strip()
-                                    available_options.append(option_text)
-                        except Exception as e:
-                            self.logger.error(f"Error getting checkbox option: {e}")
-    
-                    self.logger.info(f"Available options: {available_options}")
                 else:
-                    self.logger.warning("No legend found for checkbox group")
-                    question_text = "Checkbox group selection"
+                    # Second try: Look for section title span outside the fieldset
+                    self.logger.warning("No legend found for checkbox group, looking for section title")
+                    section_title = fieldset.evaluate("""(fieldset) => {
+                        // Go up a few levels to find container
+                        let container = fieldset;
+                        for (let i = 0; i < 5; i++) {
+                            if (!container || container.tagName === 'BODY') break;
+                            container = container.parentElement;
+                            
+                            if (container) {
+                                // Look for the section title span (LinkedIn's pattern)
+                                const title = container.querySelector('.jobs-easy-apply-form-section__group-title');
+                                if (title) return title.textContent.trim();
+                                
+                                // Also try h3 titles which are sometimes used
+                                const h3 = container.querySelector('h3.t-16');
+                                if (h3) return h3.textContent.trim();
+                            }
+                        }
+                        return null;
+                    }""")
+                    
+                    if section_title:
+                        question_text = self.response_manager.clean_question_text(section_title)
+                        self.logger.info(f"Found section title as question: {question_text}")
+                    else:
+                        # Fallback
+                        self.logger.warning("No section title found, using default text")
+                        question_text = "Checkbox group selection"
+
+                # Get all available options from the fieldset
+                checkboxes = fieldset.query_selector_all('input[type="checkbox"]')
+                for checkbox in checkboxes:
+                    try:
+                        # Get option text from associated label
+                        checkbox_id = checkbox.get_attribute("id")
+                        if checkbox_id:
+                            # Use CSS.escape for IDs with special characters
+                            escaped_id = self.css_escape(checkbox_id)
+                            label = self.page.query_selector(f"label[for='{escaped_id}']")
+                            if label:
+                                option_text = label.inner_text().strip()
+                                available_options.append(option_text)
+                    except Exception as e:
+                        self.logger.error(f"Error getting checkbox option: {e}")
+
+                self.logger.info(f"Available options: {available_options}")
             elif checkbox_field:
                 # For a single checkbox, get its label
                 checkbox_id = checkbox_field.get_attribute("id")
                 if checkbox_id:
                     # Use CSS.escape for IDs with special characters
                     escaped_id = self.css_escape(checkbox_id)
-                    label = self.page.query_selector(f"label[for='{escaped_id}']")
+                    label = self.page.query_selector(f'label[for="{escaped_id}"]')
                     if label:
                         raw_question_text = label.inner_text().strip()
                         question_text = self.response_manager.clean_question_text(raw_question_text)
@@ -1390,7 +1417,7 @@ class FormHandler:
             else:
                 self.logger.warning("Neither fieldset nor checkbox detected")
                 return False
-    
+
             # Check if we should clear checkboxes due to errors
             if has_error:
                 self.logger.info(f"Checkbox has error: {error_message} - clearing selections")
@@ -1404,11 +1431,11 @@ class FormHandler:
                     # Uncheck the single checkbox
                     if checkbox_field.is_checked():
                         checkbox_field.uncheck()
-    
+
             # Try saved responses with clean question text
             self.logger.info("Checking response database...")
             answer = self.response_manager.find_best_match(question_text, available_options)
-    
+
             if not answer:
                 # If no saved response or we have an error, get a new response
                 if has_error:
@@ -1417,14 +1444,14 @@ class FormHandler:
                 else:
                     self.logger.info("No match found, consulting Gemini...")
                     answer = self.response_manager.get_gemini_response(question_text, available_options)
-    
+
             if answer:
                 self.logger.info(f"Using answer: {answer}")
-    
+
                 if fieldset:
                     # For checkbox groups, the answer could be a single option or multiple options
                     selected_options = []
-    
+
                     # Parse the answer to identify selected options
                     if isinstance(answer, list):
                         selected_options = answer
@@ -1437,66 +1464,84 @@ class FormHandler:
                         else:
                             # Single option
                             selected_options = [answer]
-    
+
                     # Make sure we have at least one selection for required fields with errors
                     if has_error and not selected_options:
                         self.logger.info("No options identified in answer but field has error - selecting first option")
                         if available_options:
                             selected_options = [available_options[0]]
-    
+
                     # Find and check the matching checkboxes
                     success = False
                     checkboxes = fieldset.query_selector_all('input[type="checkbox"]')
-    
+
                     for option in selected_options:
                         option_matched = False
-    
+
                         for checkbox in checkboxes:
                             checkbox_id = checkbox.get_attribute("id")
                             if checkbox_id:
                                 # Use CSS.escape for IDs with special characters
                                 escaped_id = self.css_escape(checkbox_id)
                                 label = self.page.query_selector(f"label[for='{escaped_id}']")
-    
+
                                 if label:
                                     label_text = label.inner_text().strip()
-    
+
                                     # Check for exact match or contains relationship
                                     if (label_text.lower() == option.lower() or 
                                         label_text.lower() in option.lower() or 
                                         option.lower() in label_text.lower()):
-    
+
                                         self.logger.info(f"Checking option: {label_text}")
-                                        checkbox.set_checked(True, force=True)
-                                        if checkbox.is_checked():
-                                            option_matched = True
+                                        
+                                        # Try multiple methods to check the checkbox
+                                        option_matched = self._try_check_checkbox(checkbox, checkbox_id, label)
+                                        if option_matched:
                                             success = True
                                             break
-                                        else:
-                                            self.logger.info("DID NOT CHECK???")
-                                    
+                                        
                         if not option_matched:
                             self.logger.warning(f"Could not find checkbox matching option: {option}")
-    
+
                     # If we couldn't match any options but need to check something (required with error)
                     if has_error and not success and checkboxes and len(checkboxes) > 0:
                         self.logger.info("No matches found but field is required - checking first checkbox")
-                        checkboxes[0].check()
-                        success = True
-    
+                        
+                        # Get the first checkbox
+                        first_checkbox = checkboxes[0]
+                        checkbox_id = first_checkbox.get_attribute("id")
+                        label = None
+                        
+                        if checkbox_id:
+                            escaped_id = self.css_escape(checkbox_id)
+                            label = self.page.query_selector(f"label[for='{escaped_id}']")
+                        
+                        success = self._try_check_checkbox(first_checkbox, checkbox_id, label)
+                        if not success:
+                            self.logger.error("All attempts to check checkbox failed")
+
                     return success
                 elif checkbox_field:
                     # For single checkbox, check if answer is affirmative
                     affirmative = answer.lower() in ["yes", "true", "checked", "selected", "enable", "1"]
-    
+
                     if affirmative:
                         self.logger.info("Checking single checkbox")
-                        checkbox_field.check()
+                        # Get associated label for the checkbox
+                        checkbox_id = checkbox_field.get_attribute("id")
+                        label = None
+                        if checkbox_id:
+                            escaped_id = self.css_escape(checkbox_id)
+                            label = self.page.query_selector(f"label[for='{escaped_id}']")
+                        
+                        # Use multiple methods to check the checkbox
+                        success = self._try_check_checkbox(checkbox_field, checkbox_id, label)
+                        return success
                     else:
                         self.logger.info("Unchecking single checkbox")
                         checkbox_field.uncheck()
-    
-                    return True
+                        return True
                 else:
                     self.logger.warning("No fieldset or checkbox field to act on")
                     return False
@@ -1507,30 +1552,183 @@ class FormHandler:
                     if fieldset:
                         checkboxes = fieldset.query_selector_all('input[type="checkbox"]')
                         if checkboxes and len(checkboxes) > 0:
-                            checkboxes[0].check()
+                            first_checkbox = checkboxes[0]
+                            checkbox_id = first_checkbox.get_attribute("id")
+                            label = None
+                            if checkbox_id:
+                                escaped_id = self.css_escape(checkbox_id)
+                                label = self.page.query_selector(f"label[for='{escaped_id}']")
+                            return self._try_check_checkbox(first_checkbox, checkbox_id, label)
                     elif checkbox_field:
-                        checkbox_field.check()
-    
+                        checkbox_id = checkbox_field.get_attribute("id")
+                        label = None
+                        if checkbox_id:
+                            escaped_id = self.css_escape(checkbox_id)
+                            label = self.page.query_selector(f"label[for='{escaped_id}']")
+                        return self._try_check_checkbox(checkbox_field, checkbox_id, label)
                     return True
                 
                 return False
-    
+
         except Exception as e:
             self.logger.error(f"Error in handle_checkbox: {e}")
-    
-            # Fallback for error cases
-            try:
-                if has_error:
-                    if fieldset:
-                        checkboxes = fieldset.query_selector_all('input[type="checkbox"]')
-                        if checkboxes and len(checkboxes) > 0:
-                            checkboxes[0].check()
-                    elif checkbox_field:
-                        checkbox_field.check()
-            except Exception:
-                pass
-            
             return False
+
+    def _try_check_checkbox(self, checkbox, checkbox_id, label=None):
+        """
+        Try multiple methods to check a checkbox, handling the case where labels intercept pointer events.
+        
+        Args:
+            checkbox: The checkbox element
+            checkbox_id: The ID of the checkbox
+            label: The associated label element (if available)
+        
+        Returns:
+            bool: True if successfully checked, False otherwise
+        """
+        self.logger.info("Trying multiple methods to check checkbox")
+        
+        # Method 1: Standard check() method
+        try:
+            self.logger.info("Method 1: Trying standard check()")
+            checkbox.check()
+            time.sleep(0.5)
+            
+            # Verify if checked
+            is_checked = checkbox.is_checked()
+            if is_checked:
+                self.logger.info("Method 1 succeeded: checkbox checked")
+                return True
+        except Exception as e:
+            self.logger.error(f"Method 1 failed: {e}")
+        
+        # Method 2: Try clicking the checkbox directly
+        try:
+            self.logger.info("Method 2: Trying direct click")
+            checkbox.click()
+            time.sleep(0.5)
+            
+            # Verify if checked
+            is_checked = checkbox.is_checked()
+            if is_checked:
+                self.logger.info("Method 2 succeeded: checkbox checked")
+                return True
+        except Exception as e:
+            self.logger.error(f"Method 2 failed: {e}")
+        
+        # Method 3: Try clicking the label (common pattern)
+        if label:
+            try:
+                self.logger.info("Method 3: Trying to click the label")
+                label.click()
+                time.sleep(0.5)
+                
+                # Verify if checked
+                is_checked = checkbox.is_checked()
+                if is_checked:
+                    self.logger.info("Method 3 succeeded: checkbox checked")
+                    return True
+            except Exception as e:
+                self.logger.error(f"Method 3 failed: {e}")
+        
+        # Method 4: Use JavaScript to bypass pointer event issues
+        if checkbox_id:
+            try:
+                self.logger.info("Method 4: Using JavaScript to check checkbox")
+                result = self.page.evaluate(f"""
+                    (() => {{
+                        const checkbox = document.getElementById('{checkbox_id}');
+                        if (checkbox) {{
+                            // Workaround for pointer events being intercepted
+                            checkbox.checked = true;
+                            checkbox.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            return checkbox.checked;
+                        }}
+                        return false;
+                    }})()
+                """)
+                
+                if result:
+                    self.logger.info("Method 4 succeeded: checkbox checked via JavaScript")
+                    return True
+            except Exception as e:
+                self.logger.error(f"Method 4 failed: {e}")
+        
+        # Method 5: Try removing pointer-events interception via JavaScript
+        if label and checkbox_id:
+            try:
+                self.logger.info("Method 5: Removing pointer-events from label temporarily")
+                result = self.page.evaluate(f"""
+                    (() => {{
+                        const checkbox = document.getElementById('{checkbox_id}');
+                        const label = document.querySelector('label[for="{checkbox_id}"]');
+                        
+                        if (checkbox && label) {{
+                            // Store original pointer-events style
+                            const originalStyle = label.style.pointerEvents;
+                            
+                            // Disable pointer events on label temporarily
+                            label.style.pointerEvents = 'none';
+                            
+                            // Try to click the checkbox
+                            checkbox.click();
+                            
+                            // Check if it worked
+                            const success = checkbox.checked;
+                            
+                            // Restore original style
+                            label.style.pointerEvents = originalStyle;
+                            
+                            return success;
+                        }}
+                        return false;
+                    }})()
+                """)
+                
+                if result:
+                    self.logger.info("Method 5 succeeded: label pointer-events workaround")
+                    return True
+            except Exception as e:
+                self.logger.error(f"Method 5 failed: {e}")
+        
+        # Method 6: Force with set_checked
+        try:
+            self.logger.info("Method 6: Using set_checked(True) with force=True")
+            checkbox.set_checked(True, force=True)
+            time.sleep(0.5)
+            
+            # Verify if checked
+            is_checked = checkbox.is_checked()
+            if is_checked:
+                self.logger.info("Method 6 succeeded: checkbox checked")
+                return True
+        except Exception as e:
+            self.logger.error(f"Method 6 failed: {e}")
+        
+        # Method 7: Last resort - use evaluate directly on the checkbox element
+        try:
+            self.logger.info("Method 7: Using evaluate directly on element")
+            result = checkbox.evaluate("""
+                (el) => {
+                    try {
+                        el.checked = true;
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        return el.checked;
+                    } catch (e) {
+                        return false;
+                    }
+                }
+            """)
+            
+            if result:
+                self.logger.info("Method 7 succeeded: evaluate")
+                return True
+        except Exception as e:
+            self.logger.error(f"Method 7 failed: {e}")
+        
+        self.logger.error("All checkbox interaction methods failed")
+        return False
+
 
     def handle_education_date_fields(self):
         """

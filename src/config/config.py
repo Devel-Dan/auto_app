@@ -111,7 +111,9 @@ JOB_FILTERS = [
     "founding",
     "c++",
     "AI engineer",
-    "cellular"
+    "cellular",
+    "photonic",
+    "lead"
 ]
 
 # Time filter mapping
