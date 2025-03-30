@@ -317,3 +317,217 @@ Answer:
 """
 }
 
+# Stop words for form response keyword extraction
+FORM_STOP_WORDS = [
+    # Basic articles, conjunctions and pronouns
+    'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what',
+    'which', 'this', 'that', 'these', 'those', 'then', 'just', 'so', 'than',
+    'such', 'both', 'through', 'about', 'into', 'between', 'after', 'since',
+    'without', 'within', 'along', 'across', 'behind', 'beyond', 'plus',
+    'except', 'up', 'out', 'around', 'down', 'off', 'above', 'below',
+    
+    # Prepositions
+    'to', 'from', 'in', 'on', 'by', 'at', 'for', 'with', 
+    
+    # Common verbs
+    'do', 'does', 'did', 'have', 'has', 'had', 'am', 'is', 'are', 'was', 'were', 
+    'be', 'been', 'being', 'can', 'could', 'shall', 'should', 'will', 'would',
+    'may', 'might', 'must', 'get', 'gets', 'got', 'make', 'makes', 'made',
+    
+    # Personal pronouns
+    'of', 'you', 'your', 'we', 'our', 'i', 'me', 'my', 'he', 'him', 'his', 
+    'she', 'her', 'hers', 'they', 'them', 'their', 'theirs', 'it', 'its',
+    
+    # Quantifiers
+    'many', 'much', 'few', 'some', 'all', 'any', 'each', 'every',
+    
+    # Question words
+    'who', 'whom', 'whose', 'when', 'where', 'why', 'how',
+    
+    # Common adverbs
+    'very', 'really', 'quite', 'simply', 'now', 'here', 'there', 'always', 
+    'never', 'ever', 'again', 'already', 'soon', 'too', 'also', 'only',
+    
+    # Form-specific common words
+    'please', 'following', 'would', 'like', 'tell', 'us', 'let', 'know',
+    'provide', 'submit', 'describe', 'explain', 'list', 'share', 'select',
+    'choose', 'check', 'enter', 'confirm', 'answer', 'question', 'option',
+    'optional', 'required', 'prefer', 'statement'
+]
+
+# Important keywords for form response matching by category
+FORM_IMPORTANT_KEYWORDS = {
+    # Work and employment
+    'work': ['work', 'job', 'career', 'position', 'employ', 'company', 'organization', 
+             'business', 'occupation', 'sector', 'industry', 'role', 'title', 'function',
+             'full-time', 'part-time', 'contract', 'permanent', 'temporary', 'w2', 'c2c',
+             'corp', 'contractor', 'consultant', 'manager', 'management', 'lead', 'team'],
+    
+    # Location and relocation
+    'location': ['location', 'relocate', 'remote', 'onsite', 'on-site', 'hybrid', 
+                 'city', 'state', 'country', 'region', 'address', 'residence', 
+                 'commute', 'distance', 'travel', 'local', 'global', 'international',
+                 'domestic', 'regional', 'where', 'area', 'currently', 'based',
+                 'office', 'live', 'living', 'reside', 'resident', 'bay'],
+    
+    # Experience and skills
+    'experience': ['experience', 'year', 'skill', 'ability', 'competence', 'proficiency',
+                   'expertise', 'knowledge', 'capability', 'strength', 'talent',
+                   'professional', 'qualification', 'specialist', 'expert', 
+                   'background', 'history', 'track', 'record', 'portfolio',
+                   'prior', 'previous', 'hands-on', 'practical', 'technical',
+                   'designing', 'developing', 'implementing', 'architecture'],
+    
+    # Education and credentials
+    'education': ['education', 'degree', 'bachelor', 'master', 'phd', 'doctorate',
+                  'university', 'college', 'school', 'academy', 'institute', 'credential',
+                  'certification', 'certificate', 'graduate', 'undergraduate', 'alumni',
+                  'major', 'minor', 'study', 'student', 'gpa', 'academic', 'diploma',
+                  'field', 'graduation', 'graduated', 'bs', 'ba', 'ms', 'mba', 'bsc'],
+    
+    # Authorization and legal
+    'legal': ['authorize', 'authorization', 'legal', 'sponsor', 'sponsorship', 'visa', 
+              'citizen', 'citizenship', 'green', 'card', 'permanent', 'resident', 
+              'immigration', 'status', 'work', 'permit', 'right', 'law', 'regulation',
+              'eligibility', 'eligible', 'requirement', 'comply', 'compliance',
+              'background', 'check', 'clearance', 'security', 'verification', 'h1b'],
+    
+    # Languages and programming
+    'languages': ['language', 'programming', 'code', 'coding', 'software', 'development',
+                 'python', 'java', 'javascript', 'c++', 'c#', 'ruby', 'php', 'go', 'golang',
+                 'swift', 'kotlin', 'typescript', 'html', 'css', 'sql', 'nosql', 'web',
+                 'mobile', 'cloud', 'frontend', 'backend', 'fullstack', 'algorithm',
+                 'framework', 'library', 'api', 'rest', 'graphql', 'microservice'],
+    
+    # Technologies and tools
+    'technologies': ['technology', 'tool', 'framework', 'library', 'platform', 'system',
+                    'database', 'aws', 'azure', 'gcp', 'react', 'angular', 'vue', 'node',
+                    'django', 'flask', 'spring', 'kubernetes', 'docker', 'terraform',
+                    'jenkins', 'git', 'ci/cd', 'devops', 'agile', 'scrum', 'kanban',
+                    'ai', 'ml', 'machine', 'learning', 'data', 'analytics', 'testing',
+                    'automation', 'infrastructure', 'pipeline', 'security'],
+    
+    # Personal information and demographics
+    'personal': ['name', 'phone', 'email', 'address', 'contact', 'birth', 'age', 'gender',
+                'ethnicity', 'race', 'demographic', 'diversity', 'veteran', 'disability',
+                'disabled', 'handicap', 'accommodation', 'military', 'service', 'identity',
+                'orientation', 'lgbtq', 'transgender', 'specify', 'prefer', 'disclosure'],
+    
+    # Salary and compensation
+    'compensation': ['salary', 'compensation', 'wage', 'pay', 'earning', 'income', 'bonus',
+                    'benefit', 'stock', 'option', 'equity', 'rate', 'hourly', 'annual',
+                    'yearly', 'monthly', 'package', 'total', 'expectation', 'range',
+                    'desired', 'expected', 'requirement', 'negotiable', 'budget', 'band'],
+    
+    # Availability and scheduling
+    'availability': ['available', 'availability', 'start', 'notice', 'schedule', 'shift',
+                    'flexible', 'flexibility', 'hour', 'day', 'week', 'weekend', 'holiday',
+                    'vacation', 'leave', 'pto', 'balance', 'commitment', 'duration',
+                    'period', 'immediately', 'urgently', 'urgent', 'timeframe', 'term'],
+    
+    # Application and interview
+    'application': ['apply', 'application', 'interview', 'resume', 'cv', 'cover',
+                   'letter', 'portfolio', 'sample', 'reference', 'recommendation',
+                   'assessment', 'test', 'evaluation', 'screen', 'submission',
+                   'linkedin', 'profile', 'github', 'writing', 'process', 'hiring'],
+                   
+    # Domain-specific
+    'domains': ['banking', 'finance', 'healthcare', 'medical', 'insurance', 'retail',
+               'ecommerce', 'manufacturing', 'automotive', 'aerospace', 'defense',
+               'energy', 'telecom', 'media', 'entertainment', 'education', 'government',
+               'nonprofit', 'startup', 'enterprise', 'consulting', 'research',
+               'pharmaceutical', 'biotechnology', 'food', 'beverage', 'hospitality',
+               'transportation', 'logistics', 'construction', 'real', 'estate']
+}
+
+# Flatten the important keywords for direct usage
+FORM_IMPORTANT_KEYWORDS_FLAT = []
+for category in FORM_IMPORTANT_KEYWORDS.values():
+    FORM_IMPORTANT_KEYWORDS_FLAT.extend(category)
+
+# Common compound terms that should be matched as single concepts
+FORM_COMPOUND_PATTERNS = [
+    r'\b(work|job)\s+experience\b',
+    r'\b(total|overall)\s+experience\b', 
+    r'\b(bachelor\'?s?|master\'?s?|phd|doctorate)\s+degree\b',
+    r'\b(software|web|mobile|backend|fullstack|frontend)\s+(developer|engineer)\b',
+    r'\b(onsite|on-site|on\s+site)\b',
+    r'\b(remote|hybrid)\s+work\b',
+    r'\bwork\s+(authorization|permit|visa|eligibility)\b',
+    r'\blegal(ly)?\s+(authorized|eligible)\b',
+    r'\b(us|u\.s\.|united\s+states)\s+(citizen|citizenship)\b',
+    r'\bgreen\s+card\b',
+    r'\bcurrent(ly)?\s+(employ|employed|work|location)\b',
+    r'\bsecurity\s+clearance\b',
+    r'\bhourly\s+rate\b',
+    r'\bdata\s+(science|scientist|engineer|engineering|analytics)\b',
+    r'\bmachine\s+learning\b',
+    r'\bdevops\s+engineer\b',
+    r'\btest(ing)?\s+automation\b',
+    r'\bci/cd\b',
+    r'\bcloud\s+(computing|infrastructure|platform|service)\b'
+]
+
+# Matching thresholds and weights
+MATCH_THRESHOLDS = {
+    "KEYWORD_MATCH_THRESHOLD": 0.5,      # Threshold for considering keyword matches
+    "COMBINED_SCORE_THRESHOLD": 0.6,     # Threshold for accepting combined matches
+    "FUZZY_MATCH_THRESHOLD": 0.8,        # Threshold for traditional fuzzy matching
+}
+
+MATCH_WEIGHTS = {
+    "KEYWORD_WEIGHT": 0.7,               # Weight for keyword similarity
+    "STRING_WEIGHT": 0.3,                # Weight for string similarity
+}
+
+# Word stemming/lemmatization settings
+NLP_SETTINGS = {
+    "USE_STEMMING": True,                # Enable word stemming
+    "STEM_CACHE_SIZE": 1000,             # Size of the stemming cache
+}
+
+# Common question types for specialized handling
+QUESTION_TYPES = {
+    "YES_NO": ["yes", "no", "y/n", "yes/no", "agree", "consent", "confirm", "accept"],
+    "DEMOGRAPHIC": ["gender", "ethnicity", "race", "veteran", "disability", "orientation", 
+                   "demographic", "diversity", "identity", "transgender", "lgbtqia"],
+    "AUTHORIZATION": ["authorized", "authorization", "eligible", "eligibility", 
+                     "sponsorship", "visa", "citizenship", "legally", "green card"],
+    "EXPERIENCE": ["experience", "year", "skill", "expertise", "proficiency"],
+    "LOCATION": ["where", "location", "city", "state", "country", "address", "remote", "onsite"],
+}
+
+# Patterns for extracting numeric values with context
+NUMERIC_PATTERNS = [
+    (r'\b(\d+)\s*(?:year|yr)[s]?(?:\s+of\s+(?:experience|work))?\b', '{} years'),
+    (r'\b(\d+)\s*\+\s*(?:year|yr)[s]?(?:\s+of\s+(?:experience|work))?\b', '{}+ years'),
+    (r'\b(\d+)(?:\s*-\s*\d+)?\s*(?:year|yr)[s]?\b', '{} years'),
+    (r'\b(\d+)(?:\s*to\s*\d+)?\s*(?:year|yr)[s]?\b', '{} years'),
+    (r'\b(\d+)(?:\s*\+)?\s*(?:month|mo)[s]?\b', '{} months'),
+    (r'\b(?:salary|compensation|pay)(?:.{0,30})?(\d[\d,]+(?:\.\d+)?)', '${} salary'),
+    (r'\b(\d[\d,]+(?:\.\d+)?)(?:.{0,15})?(?:salary|compensation|pay)\b', '${} salary'),
+]
+
+# Semantic matching thresholds for option matching
+OPTION_MATCH_THRESHOLDS = {
+    "EXACT_MATCH": 1.0,           # Threshold for exact matches
+    "SEMANTIC_MATCH": 0.4,        # Threshold for semantic similarity
+    "FUZZY_MATCH": 0.5,           # Threshold for fuzzy string matching
+}
+
+# Weights for semantic similarity components
+SEMANTIC_SIMILARITY_WEIGHTS = {
+    "STEMMED_OVERLAP": 0.5,       # Weight for stemmed word overlap
+    "CONCEPT_OVERLAP": 0.3,       # Weight for key concept matching
+    "SEQUENCE_SIMILARITY": 0.2,   # Weight for token sequence similarity
+}
+
+# Key concept patterns for semantic matching
+KEY_CONCEPT_PATTERNS = {
+    "AFFIRMATIVE": ["yes", "agree", "true", "confirm", "accept", "approved", "acknowledged"],
+    "NEGATIVE": ["no", "disagree", "false", "reject", "decline", "denied", "not approved"],
+    "PRIVACY": ["prefer not", "decline to", "not specify", "private", "confidential", 
+               "not disclose", "withhold", "rather not say"],
+    "LOCATION": ["onsite", "on-site", "remote", "hybrid", "in-office", "work from home", "wfh"],
+    "CURRENT": ["already", "currently", "presently", "now", "at the moment", "existing"]
+}

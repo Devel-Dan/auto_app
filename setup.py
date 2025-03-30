@@ -28,6 +28,8 @@ setup(
         "beautifulsoup4>=4.12.2",
         "pytest>=7.4.0",
         "pypandoc>=1.12",
+        "nltk>=3.8.1",
+        "Levenshtein>=0.27.1"
     ],
     entry_points={
         "console_scripts": [

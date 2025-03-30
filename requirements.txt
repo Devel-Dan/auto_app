@@ -16,5 +16,6 @@ pytest>=7.4.0
 # Document processing
 pypandoc>=1.12
 
-# LinkedIn specific modules
-# No external packages needed
+#NLP fuzzy matching stuff
+nltk>=3.8.1
+Levenshtein>=0.27.1
