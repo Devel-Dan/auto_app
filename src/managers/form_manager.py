@@ -128,15 +128,7 @@ class FormResponseManager:
 
     def find_best_match(self, question_text, options=None, error=None):
         """
-        Find best matching response from saved responses.
-        
-        Args:
-            question_text (str): Question to match
-            options (list, optional): Available options
-            error (str, optional): Error context for response generation
-        
-        Returns:
-            Matched response or None
+        Find best matching response using keyword matching for better semantic understanding.
         """
         logger.info(f"\nLooking for match for question: {question_text}")
         if options:
@@ -160,15 +152,64 @@ class FormResponseManager:
                 logger.info(f"Matched to option: {matched_option}")
                 return matched_option
             return answer
+        
+        # Extract keywords from the question
+        question_keywords = self._extract_keywords(question_text)
+        logger.debug(f"Keywords from question: {question_keywords}")
+        
+        # Find potential matches based on keywords
+        potential_matches = []
+        
+        for saved_question in self.responses:
+            saved_keywords = self._extract_keywords(saved_question.lower())
             
-        # Fuzzy match
-        logger.info("No exact match found, trying fuzzy matching...")
+            # Calculate keyword match percentage
+            if not saved_keywords or not question_keywords:
+                continue
+                
+            # Calculate Jaccard similarity (intersection over union)
+            matches = len(set(question_keywords) & set(saved_keywords))
+            total = len(set(question_keywords) | set(saved_keywords))
+            keyword_similarity = matches / total if total > 0 else 0
+            
+            # If keywords match well enough, consider this question
+            if keyword_similarity > 0.5:
+                # Also do a string similarity check as secondary measure
+                string_similarity = difflib.SequenceMatcher(None, question_text, saved_question.lower()).ratio()
+                
+                # Combined score (70% keywords, 30% string)
+                combined_score = (keyword_similarity * 0.7) + (string_similarity * 0.3)
+                
+                potential_matches.append((saved_question, combined_score))
+        
+        # Sort potential matches by score
+        potential_matches.sort(key=lambda x: x[1], reverse=True)
+        
+        # If we have potential matches
+        if potential_matches:
+            best_match, score = potential_matches[0]
+            
+            # Accept match if the score is good enough
+            if score > 0.6:
+                answer = self.responses[best_match]["answer"]
+                logger.info(f"Found keyword match '{best_match}' with score {score:.2f}")
+                logger.info(f"Answer: {answer}")
+                
+                if options:
+                    matched_option = self._find_closest_option(answer, options)
+                    logger.info(f"Matched to option: {matched_option}")
+                    return matched_option
+                return answer
+        
+        # Fall back to traditional fuzzy matching
+        logger.info("Keyword matching failed, trying traditional fuzzy matching...")
         best_ratio = 0
         best_match = None
         
         for saved_question in self.responses:
             ratio = difflib.SequenceMatcher(None, question_text, saved_question.lower()).ratio()
             logger.debug(f"Comparing with '{saved_question}' - similarity: {ratio:.2f}")
+            
             if ratio > 0.8 and ratio > best_ratio:
                 best_ratio = ratio
                 best_match = saved_question
@@ -183,9 +224,45 @@ class FormResponseManager:
                 logger.info(f"Matched to option: {matched_option}")
                 return matched_option
             return answer
-            
+        
         logger.info("No suitable match found in database")
         return None
+
+    def _extract_keywords(self, text):
+        """
+        Extract important keywords from a question for semantic matching.
+        """
+        import re
+        
+        # Remove punctuation and split into words
+        words = re.findall(r'\b\w+\b', text.lower())
+        
+        # Remove common stop words
+        stop_words = [
+            'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what',
+            'which', 'this', 'that', 'these', 'those', 'then', 'just', 'so', 'than',
+            'such', 'both', 'through', 'about', 'into', 'between', 'after', 'since',
+            'without', 'within', 'along', 'across', 'behind', 'beyond', 'plus',
+            'except', 'but', 'up', 'out', 'around', 'down', 'off', 'above', 'below',
+            'to', 'from', 'in', 'on', 'by', 'at', 'for', 'with', 'do', 'does', 'did',
+            'have', 'has', 'had', 'am', 'is', 'are', 'was', 'were', 'be', 'been',
+            'of', 'you', 'your', 'we', 'our', 'i', 'me', 'my', 'many', 'much'
+        ]
+        
+        keywords = [word for word in words if word not in stop_words and len(word) > 1]
+        
+        # Special handling for important terms
+        important_terms = [
+            "python", "java", "javascript", "c++", "c#", "ruby", "php", "experience",
+            "programming", "software", "development", "years", "work", "hands-on"
+        ]
+        
+        # Make sure important terms are included
+        for term in important_terms:
+            if term in text.lower() and term not in keywords:
+                keywords.append(term)
+        
+        return keywords
 
     def _find_closest_option(self, answer, options):
         """

@@ -1576,7 +1576,8 @@ class FormHandler:
 
     def _try_check_checkbox(self, checkbox, checkbox_id, label=None):
         """
-        Try multiple methods to check a checkbox, handling the case where labels intercept pointer events.
+        Optimized function to check checkboxes that prioritizes direct DOM manipulation
+        for checkboxes with intercepted pointer events.
         
         Args:
             checkbox: The checkbox element
@@ -1586,60 +1587,14 @@ class FormHandler:
         Returns:
             bool: True if successfully checked, False otherwise
         """
-        self.logger.info("Trying multiple methods to check checkbox")
-        
-        # Method 1: Standard check() method
-        try:
-            self.logger.info("Method 1: Trying standard check()")
-            checkbox.check()
-            time.sleep(0.5)
-            
-            # Verify if checked
-            is_checked = checkbox.is_checked()
-            if is_checked:
-                self.logger.info("Method 1 succeeded: checkbox checked")
-                return True
-        except Exception as e:
-            self.logger.error(f"Method 1 failed: {e}")
-        
-        # Method 2: Try clicking the checkbox directly
-        try:
-            self.logger.info("Method 2: Trying direct click")
-            checkbox.click()
-            time.sleep(0.5)
-            
-            # Verify if checked
-            is_checked = checkbox.is_checked()
-            if is_checked:
-                self.logger.info("Method 2 succeeded: checkbox checked")
-                return True
-        except Exception as e:
-            self.logger.error(f"Method 2 failed: {e}")
-        
-        # Method 3: Try clicking the label (common pattern)
-        if label:
-            try:
-                self.logger.info("Method 3: Trying to click the label")
-                label.click()
-                time.sleep(0.5)
-                
-                # Verify if checked
-                is_checked = checkbox.is_checked()
-                if is_checked:
-                    self.logger.info("Method 3 succeeded: checkbox checked")
-                    return True
-            except Exception as e:
-                self.logger.error(f"Method 3 failed: {e}")
-        
-        # Method 4: Use JavaScript to bypass pointer event issues
+        # Method 1: JavaScript direct property manipulation - fastest and most reliable
         if checkbox_id:
             try:
-                self.logger.info("Method 4: Using JavaScript to check checkbox")
+                self.logger.info("Method 1: Direct JavaScript property manipulation")
                 result = self.page.evaluate(f"""
                     (() => {{
                         const checkbox = document.getElementById('{checkbox_id}');
                         if (checkbox) {{
-                            // Workaround for pointer events being intercepted
                             checkbox.checked = true;
                             checkbox.dispatchEvent(new Event('change', {{ bubbles: true }}));
                             return checkbox.checked;
@@ -1649,65 +1604,59 @@ class FormHandler:
                 """)
                 
                 if result:
-                    self.logger.info("Method 4 succeeded: checkbox checked via JavaScript")
+                    self.logger.info("✓ Method 1 succeeded: checkbox checked via JavaScript")
                     return True
             except Exception as e:
-                self.logger.error(f"Method 4 failed: {e}")
+                self.logger.error(f"✗ Method 1 failed: {e}")
         
-        # Method 5: Try removing pointer-events interception via JavaScript
-        if label and checkbox_id:
-            try:
-                self.logger.info("Method 5: Removing pointer-events from label temporarily")
-                result = self.page.evaluate(f"""
-                    (() => {{
-                        const checkbox = document.getElementById('{checkbox_id}');
-                        const label = document.querySelector('label[for="{checkbox_id}"]');
-                        
-                        if (checkbox && label) {{
-                            // Store original pointer-events style
-                            const originalStyle = label.style.pointerEvents;
-                            
-                            // Disable pointer events on label temporarily
-                            label.style.pointerEvents = 'none';
-                            
-                            // Try to click the checkbox
-                            checkbox.click();
-                            
-                            // Check if it worked
-                            const success = checkbox.checked;
-                            
-                            // Restore original style
-                            label.style.pointerEvents = originalStyle;
-                            
-                            return success;
-                        }}
-                        return false;
-                    }})()
-                """)
-                
-                if result:
-                    self.logger.info("Method 5 succeeded: label pointer-events workaround")
-                    return True
-            except Exception as e:
-                self.logger.error(f"Method 5 failed: {e}")
-        
-        # Method 6: Force with set_checked
+        # Method 2: Try force with set_checked - also doesn't use pointer events
         try:
-            self.logger.info("Method 6: Using set_checked(True) with force=True")
+            self.logger.info("Method 2: Using set_checked(True) with force=True")
             checkbox.set_checked(True, force=True)
-            time.sleep(0.5)
+            time.sleep(0.2)
             
             # Verify if checked
             is_checked = checkbox.is_checked()
             if is_checked:
-                self.logger.info("Method 6 succeeded: checkbox checked")
+                self.logger.info("✓ Method 2 succeeded: checkbox checked via force")
                 return True
         except Exception as e:
-            self.logger.error(f"Method 6 failed: {e}")
+            self.logger.error(f"✗ Method 2 failed: {e}")
         
-        # Method 7: Last resort - use evaluate directly on the checkbox element
+        # Method 3: Click the label instead of the checkbox with very short timeout
+        if label:
+            try:
+                self.logger.info("Method 3: Clicking the label with short timeout")
+                # Just 1.5 second timeout
+                label.click(timeout=1500)
+                time.sleep(0.2)
+                
+                # Verify if checked
+                is_checked = checkbox.is_checked()
+                if is_checked:
+                    self.logger.info("✓ Method 3 succeeded: checkbox checked via label")
+                    return True
+            except Exception as e:
+                self.logger.error(f"✗ Method 3 failed: {e}")
+        
+        # Method 4: Standard check method but with very short timeout
         try:
-            self.logger.info("Method 7: Using evaluate directly on element")
+            self.logger.info("Method 4: Using standard check() with short timeout")
+            # Just 1.5 second timeout
+            checkbox.check(timeout=1500)
+            time.sleep(0.2)
+            
+            # Verify if checked
+            is_checked = checkbox.is_checked()
+            if is_checked:
+                self.logger.info("✓ Method 4 succeeded: checkbox checked")
+                return True
+        except Exception as e:
+            self.logger.error(f"✗ Method 4 failed: {e}")
+        
+        # Method 5: Last resort - evaluate directly on element
+        try:
+            self.logger.info("Method 5: Element evaluate approach")
             result = checkbox.evaluate("""
                 (el) => {
                     try {
@@ -1721,14 +1670,13 @@ class FormHandler:
             """)
             
             if result:
-                self.logger.info("Method 7 succeeded: evaluate")
+                self.logger.info("✓ Method 5 succeeded: checkbox checked via element evaluate")
                 return True
         except Exception as e:
-            self.logger.error(f"Method 7 failed: {e}")
+            self.logger.error(f"✗ Method 5 failed: {e}")
         
         self.logger.error("All checkbox interaction methods failed")
         return False
-
 
     def handle_education_date_fields(self):
         """

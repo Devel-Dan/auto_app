@@ -11,12 +11,24 @@ import json
 from datetime import datetime
 from src.core.application_app import ApplicationApp
 from src.core.logger import setup_logger, setup_root_logger
+import signal
+import sys
 
 # Import from config
 from src.config.config import (
     SEARCH_QUERIES, TIME_FILTER_MAPPING, WORK_TYPE_MAPPING, 
     LOG_LEVEL, APPLICATION_MAPPING, FILE_PATHS
 )
+
+# Add this before your main function
+def signal_handler(sig, frame):
+    print("\nReceived interrupt signal. Shutting down gracefully...")
+    # Perform any critical cleanup here if needed
+    # Then exit gracefully
+    sys.exit(0)
+
+# Set up the signal handler
+signal.signal(signal.SIGINT, signal_handler)
 
 # Create session timestamp
 session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

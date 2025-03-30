@@ -204,12 +204,49 @@ class JobSearchManager:
             self.logger.info(f"Navigating to filtered top picks: {filtered_url}")
             self.browser_manager.navigate(filtered_url)
 
-            # Wait for page to load
-            self.logger.debug("Waiting for page to load")
-            self.page.wait_for_load_state("networkidle")
-            time.sleep(TIMING["LONG_SLEEP"])
-
-            # Log some information about the results
+            # Step 1: Wait for DOM content to load (faster than networkidle)
+            self.logger.debug("Waiting for DOM content to load...")
+            self.page.wait_for_load_state("domcontentloaded", timeout=TIMING["EXTENDED_TIMEOUT"])
+            
+            # Step 2: Wait for job cards to appear (most reliable indicator)
+            self.logger.debug(f"Waiting for job cards to appear...")
+            job_cards_loaded = False
+            
+            try:
+                # First attempt: Wait for cards with standard timeout
+                self.page.wait_for_selector(self.selectors["JOB_CARDS"], timeout=TIMING["STANDARD_TIMEOUT"])
+                job_cards_loaded = True
+                self.logger.info("Job cards found on first attempt")
+            except Exception as e:
+                self.logger.warning(f"Job cards not visible yet, waiting longer: {str(e)}")
+                # Second attempt: Add a delay and try a second time
+                time.sleep(TIMING["MEDIUM_SLEEP"])
+                
+                try:
+                    self.page.wait_for_selector(self.selectors["JOB_CARDS"], timeout=TIMING["EXTENDED_TIMEOUT"])
+                    job_cards_loaded = True
+                    self.logger.info("Job cards found on second attempt")
+                except Exception as e2:
+                    self.logger.warning(f"Still no job cards, will try to continue: {str(e2)}")
+                    
+                    # Failsafe: try scrolling the page to force loading
+                    try:
+                        self.logger.info("Scrolling page to force loading...")
+                        self.page.evaluate("window.scrollBy(0, 500)")
+                        time.sleep(TIMING["LONG_SLEEP"])
+                        
+                        # Check if job cards are visible now
+                        visible_cards = self.page.query_selector_all(self.selectors["JOB_CARDS"])
+                        if visible_cards and len(visible_cards) > 0:
+                            job_cards_loaded = True
+                            self.logger.info(f"Found {len(visible_cards)} job cards after scrolling")
+                    except Exception as scroll_error:
+                        self.logger.error(f"Error during scroll attempt: {str(scroll_error)}")
+            
+            # Step 3: Add a small delay for any animations to complete
+            time.sleep(TIMING["MEDIUM_SLEEP"])
+            
+            # Step 4: Verify we have content by checking job count
             try:
                 job_count_element = self.page.query_selector(".jobs-search-results-list__title-heading")
                 if job_count_element:
@@ -217,13 +254,25 @@ class JobSearchManager:
                     self.logger.info(f"Recommended jobs header: {job_count_text}")
             except Exception as e:
                 self.logger.debug(f"Could not extract job count: {e}")
-
+            
+            # Final check for job cards
+            if not job_cards_loaded:
+                visible_cards = self.page.query_selector_all(self.selectors["JOB_CARDS"])
+                if visible_cards and len(visible_cards) > 0:
+                    job_cards_loaded = True
+                    self.logger.info(f"Found {len(visible_cards)} job cards in final check")
+                else:
+                    self.logger.warning("No job cards found, but will continue processing")
+            
             self.logger.info("Successfully set up jobs with filters! Ready for job processing.")
             return True
 
         except Exception as e:
             self.logger.error(f"Error finding top picks and applying filters: {e}", exc_info=True)
-            return False
+            # Continue anyway to allow processing of any jobs that might have loaded
+            self.logger.info("Attempting to continue despite error...")
+            time.sleep(TIMING["LONG_SLEEP"])
+            return True  # Return True to allow processing to continue
 
     def get_job_cards(self):
         """Get all job cards from the current page with better error handling"""

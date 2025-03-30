@@ -305,7 +305,7 @@ Response Guidelines:
 2. Always align responses with the job description requirements.
 3. If there's a negative difference between the applicant's profile and the job requirements, response should match what the job is asking for.
 4. For experience-related questions, assume the applicant has relevant experience from their resume or can quickly acquire it.
-5. For years of experience, use the job posting's required years if mentioned, otherwise default to 2-3 years.
+5. For years of experience, use the job posting's required years if mentioned, otherwise refer to my resume, and if it is not there, default to 2-3 years.
 6. For open-ended questions, provide a concise, relevant response based on the resume and job description.
 7. For multiple-choice questions, select the most favorable option that aligns with both the applicant's profile and job requirements.
 8. Tailor the response to highlight strengths and match job requirements, even if it requires slight exaggeration of skills or experience.

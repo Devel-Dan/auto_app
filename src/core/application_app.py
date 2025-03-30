@@ -117,14 +117,65 @@ class ApplicationApp:
             raise e
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self.logger.error("Error during execution", exc_val)
-        self.cleanup()
+        try:
+            # Check if this is a keyboard interrupt
+            if exc_type is KeyboardInterrupt:
+                self.logger.info("Application interrupted by user (KeyboardInterrupt)")
+            elif exc_type:
+                self.logger.error("Error during execution: %s", str(exc_val))
+                
+            # Print a message to the console directly (in case logger fails)
+            print("\nShutting down application gracefully, please wait...")
+            
+            # Perform cleanup
+            self.cleanup()
+            
+            # Indicate that we've handled the exception
+            return True  # This prevents the exception from propagating
+            
+        except Exception as e:
+            # Last resort if something goes wrong during exit
+            print(f"\nError during shutdown: {str(e)}")
+            # Try really hard to close the browser
+            try:
+                if self.browser_manager and self.browser_manager.browser:
+                    self.browser_manager.browser.close()
+            except:
+                pass
 
     def cleanup(self):
-        """Clean up resources"""
-        if self.browser_manager:
-            self.browser_manager.__exit__(None, None, None)
+        """Clean up resources safely"""
+        try:
+            # Log cleanup start but use try/except for safety
+            try:
+                self.logger.info("Starting application cleanup...")
+            except:
+                pass
+                
+            # Close the browser manager if it exists
+            if self.browser_manager:
+                try:
+                    # Use a timeout for browser closure in case it hangs
+                    self.browser_manager.__exit__(None, None, None)
+                    print("Browser closed successfully")
+                except Exception as e:
+                    print(f"Error closing browser: {str(e)}")
+                    # Force close as last resort
+                    try:
+                        if hasattr(self.browser_manager, 'browser') and self.browser_manager.browser:
+                            self.browser_manager.browser.close()
+                    except:
+                        pass
+                        
+            # Log completion
+            try:
+                self.logger.info("Application cleanup completed")
+            except:
+                pass
+                
+        except Exception as e:
+            # Last-ditch effort to log and inform
+            print(f"Critical error during cleanup: {str(e)}")
 
     def search_jobs(self, keywords: str, location: str, remote_only=True, work_types=None):
         """
