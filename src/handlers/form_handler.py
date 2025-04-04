@@ -687,12 +687,21 @@ class FormHandler:
                 self.logger.info(f"Successfully set select to: {answer}")
 
     def handle_radio(self, fieldset):
-        """Handle radio button fields with improved tag name detection."""
+        """Handle radio button fields with improved tag name detection and skipping if already selected."""
         try:
+            # First check if any radio button in this fieldset is already selected
+            already_selected = fieldset.evaluate("""(el) => {
+                const radios = el.querySelectorAll('input[type="radio"]');
+                for (const radio of radios) {
+                    if (radio.checked) return true;
+                }
+                return false;
+            }""")
+            
             # Check if the fieldset has an error
             has_error = False
             error_message = None
-    
+        
             # Check for error indicators within or near the fieldset
             for indicator in self.selectors["ERROR_INDICATORS"]:
                 error_element = fieldset.query_selector(indicator)
@@ -702,7 +711,12 @@ class FormHandler:
                     error_message = message_element.inner_text().strip() if message_element else "Unknown error"
                     self.logger.info(f"Found error in radio fieldset: {error_message}")
                     break
-                
+                    
+            # Skip if already selected and no errors
+            if already_selected and not has_error:
+                self.logger.info("Radio button already selected and no errors, skipping")
+                return
+
             # Get and clean question text - IMPROVED METHOD
             raw_question_text = None
             
@@ -765,11 +779,11 @@ class FormHandler:
             if not raw_question_text:
                 raw_question_text = "Radio button selection required"
                 self.logger.info("Using default question text")
-    
+
             # Clean the question text
             question_text = self.response_manager.clean_question_text(raw_question_text)
             self.logger.info(f"\nProcessing radio field: {question_text}")
-    
+
             # Get available options from radio labels - IMPROVED METHOD
             options = []
             label_texts = []
@@ -814,7 +828,7 @@ class FormHandler:
                         self.logger.error("Error getting radio value", e)
                         
             self.logger.info(f"Available options: {options}")
-    
+
             # Use response manager to get the best response
             answer = None
                     
@@ -823,26 +837,26 @@ class FormHandler:
             if has_error and error_message:
                 # For errors, include the error message in the query
                 answer = self.response_manager.find_best_match(question_text, options)
-    
+
                 if not answer and options:
                     self.logger.info("No match found with error context, consulting Gemini...")
                     answer = self.response_manager.get_gemini_response(question_text, options, error=error_message)
             else:
                 # Normal flow without errors
                 answer = self.response_manager.find_best_match(question_text, options)
-    
+
                 if not answer and options:
                     self.logger.info("No match found, consulting Gemini...")
                     answer = self.response_manager.get_gemini_response(question_text, options)
-    
+
             # If we still don't have an answer but have options, pick one (default to first)
             if not answer and options:
                 answer = options[0]
                 self.logger.info(f"No answer found, using first option: {answer}")
-    
+
             if answer:
                 self.logger.info(f"Using answer: {answer}")
-    
+
                 # Find the matching label
                 matched_label = None
                 for label, text in label_texts:
@@ -854,7 +868,7 @@ class FormHandler:
                 if matched_label:
                     # Try multiple selection methods
                     success = False
-    
+
                     # Determine if this is an input or label using evaluate instead of tag_name
                     is_input = matched_label.evaluate("el => el.tagName.toLowerCase() === 'input'")
                     
@@ -866,7 +880,7 @@ class FormHandler:
                         success = True
                     except Exception as e:
                         self.logger.error("Direct click failed", e)
-    
+
                     # Method 2: If it's a label, try to find and click the radio input
                     if not success and not is_input:
                         try:
@@ -881,7 +895,7 @@ class FormHandler:
                                     success = True
                         except Exception as e:
                             self.logger.error("Radio input click failed", e)
-    
+
                     # Method 3: Use JavaScript
                     if not success:
                         try:
@@ -906,14 +920,14 @@ class FormHandler:
                                     success = True
                         except Exception as e:
                             self.logger.error("JavaScript radio selection failed", e)
-    
+
                     if success:
                         self.logger.info(f"Successfully selected radio option: {answer}")
                     else:
                         self.logger.info(f"Failed to select radio option: {answer}")
                 else:
                     self.logger.info(f"Could not find label matching answer: {answer}")
-    
+
                     # Special handling for GDPR questions
                     if "reside" in question_text.lower() or "gdpr" in question_text.lower() or "data consent" in question_text.lower():
                         self.logger.info("This appears to be a GDPR question, using special handling")
@@ -958,7 +972,7 @@ class FormHandler:
                                 self.logger.info("Clicking second radio button as fallback for 'No'")
                                 radios[1].click()
                                 time.sleep(0.5)
-    
+
         except Exception as e:
             self.logger.error(f"Error in handle_radio: {e}")
 
