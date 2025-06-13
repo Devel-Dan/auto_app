@@ -33,7 +33,7 @@ class CustomResumeHandler():
         company_name = self.sanitize_filename(company_name)
         job_title = self.sanitize_filename(job_title)  # Use the sanitize function
         self.current_job_id = f"{company_name}_{job_title}"
-
+        print(self.current_job_id, "current job id")
         # Get the prompt template from config and format it with just the job description
         prompt = PROMPTS["RESUME_GENERATION"].format(
             job_description=job_description
@@ -266,20 +266,44 @@ class CustomResumeHandler():
 
     def sanitize_filename(self, name):
         # Remove characters that are not allowed in filenames
-        invalid_chars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|']
-        for char in invalid_chars:
-            name = name.replace(char, '_')
+        invalid_chars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '\n', '\t', '\r', '!', '@', '#', '$', '%', '^', '&', '(', ')', '+', '=', '{', '}', '[', ']', ';', "'", ',', '.', '`']
+        name = ''.join(c for c in name if c not in invalid_chars)
+        name = name.replace(' ', '_')  # Replace spaces with underscores
+        print(f"Sanitized filename: {name}")
         return name
 
 if __name__ == "__main__":
-    from generic_application import GenericApplier
 
+     
+    job_description ="""
+The Opportunity
+
+Are you passionate about crafting products that users and team members love to engage with? We're seeking an individual who is enthusiastic about the power of voice and eager to redefine communication, collaboration, and idea sharing with our AI-powered collaborative note-taking app. As our core product gains rapid adoption, this role will play a pivotal part in enhancing how people and teams communicate. The ideal candidate thrives in a fast-paced, collaborative, and agile startup environment and is committed to delivering high-quality product experiences.
+
+Your Impact:
+Develop and maintain scalable web automation frameworks using Playwright, Selenium, and Pytest to ensure comprehensive test coverage.
+Define, design, and implement efficient automation strategies to reduce manual testing efforts and improve test execution speed.
+Provide test automation support by writing and maintaining high-quality test code, following best coding practices, and conducting PR reviews.
+Work closely with development and QA teams in an Agile environment to integrate automation early and accelerate release cycles.
+Drive multiple automation initiatives in a fast-paced CI/CD environment, ensuring stable and reliable test execution.
+Continuously evaluate and recommend cutting-edge automation tools to optimize testing, improve reliability, and minimize flakiness.
+Build utilities and scripts to automate repetitive tasks, improving overall test efficiency and reducing execution time.
+We’re looking for someone who:
+5+ years of experience as an Sr SDET or Software Engineer, focusing on web application testing and automation.
+Strong programming skills in Python and JavaScript/TypeScript for test automation.
+Hands-on experience with Selenium, Playwright, and/or Puppeteer for browser automation.
+Expertise in Pytest for writing and structuring test cases.
+Solid experience with integration testing and end-to-end testing of web applications.
+Strong understanding of CI/CD processes and experience integrating automation into pipelines using Jenkins, GitHub Actions, or similar tools.
+Familiarity with containerization tools like Docker for creating test environments.
+Experience with web performance, accessibility, and security testing best practices.
+Exposure to cloud-based testing platforms such as BrowserStack or Sauce Labs.
+Excellent problem-solving skills and the ability to debug and analyze test failures efficiently.
+Strong communication skills with the ability to collaborate effectively in a fast-paced environment.
+    """
     test = CustomResumeHandler()
-    applier = GenericApplier()
-    url = "https://jobs.multicoin.capital/companies/paxos/jobs/47411676-software-engineer-financial-automation"
-    job_description = applier.get_job_description_from_url(url)
-    print(job_description)
-    test.generate_custom_resume("sde", "paxos", job_description)
+
+    test.generate_custom_resume("Dk", "otter_web", job_description)
 
 
 

@@ -444,79 +444,48 @@ class JobSearchManager:
     def navigate_to_next_page(self):
         """Navigate to the next page of job results if available."""
         try:
-            self.logger.info("Checking for pagination controls...")
+            self.logger.info("Checking for next page...")
 
-            # Look for the pagination container
-            pagination = self.page.query_selector(self.selectors["PAGINATION"])
-            if not pagination:
-                self.logger.info("Pagination controls not found")
+            # Look for the Next button
+            next_button = self.page.query_selector(self.selectors["NEXT_BUTTON"])
+            
+            if not next_button:
+                # Fallback: try finding by aria-label
+                next_button = self.page.query_selector("button[aria-label='View next page']")
+            
+            if not next_button:
+                self.logger.info("No Next button found")
                 return False
 
-            # Find the current active page number
-            active_page_element = pagination.query_selector(self.selectors["ACTIVE_PAGE"])
-            if not active_page_element:
-                self.logger.info("Could not determine the current active page")
+            # Check if the button is disabled (we're on the last page)
+            is_disabled = next_button.get_attribute("disabled")
+            if is_disabled:
+                self.logger.info("Next button is disabled - on last page")
                 return False
 
-            # Extract current page number
-            current_page_button = active_page_element.query_selector("button")
-            if not current_page_button:
-                self.logger.info("Could not find the current page button")
-                return False
-
-            # Get the page number from the aria-label attribute
-            aria_label = current_page_button.get_attribute("aria-label")
-            if not aria_label or not aria_label.startswith("Page "):
-                self.logger.info(f"Unexpected aria-label format: {aria_label}")
-                return False
-
-            # Parse the current page number
-            try:
-                current_page = int(aria_label.replace("Page ", ""))
-                self.logger.info(f"Currently on page {current_page}")
-            except ValueError:
-                self.logger.info(f"Could not parse page number from: {aria_label}")
-                return False
-
-            # Find the total number of pages
-            page_state = pagination.query_selector(".artdeco-pagination__page-state")
+            # Get current page info before clicking
+            page_state = self.page.query_selector(self.selectors["PAGE_STATE"])
             if page_state:
-                state_text = page_state.inner_text()
-                try:
-                    total_pages = int(state_text.split("of ")[1].strip())
-                    self.logger.info(f"Total pages: {total_pages}")
+                self.logger.info(f"Current state: {page_state.inner_text().strip()}")
 
-                    if current_page >= total_pages:
-                        self.logger.info("Already on the last page")
-                        return False
-                except (IndexError, ValueError):
-                    self.logger.info(f"Could not parse total pages from: {state_text}")
-                    # Continue anyway since we can still try to find the next page button
+            # Click the Next button
+            self.logger.info("Clicking Next button...")
+            next_button.click()
 
-            # Try to find and click the next page
-            next_page_number = current_page + 1
-            self.logger.debug(f"Looking for page {next_page_number} button")
+            # Wait for the page to load
+            self.page.wait_for_load_state()
+            time.sleep(TIMING["PAGE_LOAD_WAIT"])
 
-            # First try: Look for a button with aria-label="Page X" where X is the next page number
-            next_page_selector = f"button[aria-label='Page {next_page_number}']"
-            next_page_button = pagination.query_selector(next_page_selector)
+            # Verify we moved to a new page by checking if page state changed
+            new_page_state = self.page.query_selector(self.selectors["PAGE_STATE"])
+            if new_page_state:
+                self.logger.info(f"New state: {new_page_state.inner_text().strip()}")
 
-            if next_page_button:
-                self.logger.info(f"Found button for page {next_page_number}")
-                next_page_button.click()
-                self.logger.info(f"Clicked to navigate to page {next_page_number}")
-
-                # Wait for page to load
-                self.page.wait_for_load_state()
-                time.sleep(TIMING["PAGE_LOAD_WAIT"])  # Give some extra time for results to load
-
-                return True
-
-            self.logger.info(f"Could not find button for page {next_page_number}")
-            return False
+            self.logger.info("Successfully navigated to next page")
+            return True
 
         except Exception as e:
-            self.logger.error(f"Error navigating to next page: {e}", exc_info=True)
+            self.logger.error(f"Error navigating to next page: {e}")
             return False
 
     def is_easy_apply_job(self):
